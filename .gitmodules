@@ -1,0 +1,3 @@
+[submodule "lib/vulkano"]
+	path = lib/vulkano
+	url = https://github.com/vulkano-rs/vulkano.git

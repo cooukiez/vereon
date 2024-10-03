@@ -4,3 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+vulkano = { version = "0.34.1", default-features = false, features = ["serde"] }
+vulkano-shaders = { version = "0.34.0" }
+vulkano-macros = { version = "0.34.0" }
+vulkano-util = { version = "0.34.1" }
+
+winit = { version = "0.28", default-features = false, features = ["wayland"] }
+
+cgmath = "0.18"
+glium = "0.32.1"
+png = "0.17"
+rand = "0.8.4"
+ron = "0.8"
+serde = { version = "1.0", features = ["derive"] }
