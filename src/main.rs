@@ -8,11 +8,13 @@ use std::time::Instant;
 use ansi_term::Color::{Blue, Red, Yellow};
 use ansi_term::Style;
 use env_logger::{Builder, Target};
+use glam::Mat4;
 use imgui::{Condition, Context, FontSource};
 use imgui_winit_support::WinitPlatform;
 use log::{info, LevelFilter};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use wgpu::util::DeviceExt;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -119,8 +121,10 @@ impl SVO {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniform {
-    
+    proj_mat: Mat4,
 }
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
@@ -194,6 +198,16 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .unwrap();
 
     surf.configure(&dev, &surf_cfg);
+    //
+    //
+    //
+    let uniform = Uniform { proj_mat: Mat4::default() };
+
+    let uniform_buffer = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Uniform Buffer"),
+        contents: bytemuck::cast_slice(&[uniform]),
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
 
     //
     // imgui setup

@@ -14,8 +14,10 @@ imgui-winit-support = "0.12"
 imgui-wgpu = { git = "https://github.com/Yatekii/imgui-wgpu-rs", version = "0.24" }
 
 cgmath = "0.18"
-env_logger = "0.10"
+glam = "0.29.0"
+env_logger = "0.11.5"
 pollster = "0.3"
 rand = "0.8"
 ansi_term = "0.12.1"
 log = "0.4.22"
+bytemuck = "1.18.0"
