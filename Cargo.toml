@@ -4,16 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-vulkano = { version = "0.34.1", default-features = false, features = ["serde"] }
-vulkano-shaders = { version = "0.34.0" }
-vulkano-macros = { version = "0.34.0" }
-vulkano-util = { version = "0.34.1" }
+wgpu = { version = "22.1.0", default-features = false, features = [
+    "wgsl",
+    "dx12",
+    "metal",
+] }
 
-winit = { version = "0.28", default-features = false, features = ["wayland"] }
-
+# change to wayland if window icons look better
+winit = { version = "0.29", default-features = false, features = ["rwh_06", "x11"] }
+imgui = { version = "0.12", git = "https://github.com/imgui-rs/imgui-rs" }
 cgmath = "0.18"
-glium = "0.32.1"
-png = "0.17"
-rand = "0.8.4"
-ron = "0.8"
-serde = { version = "1.0", features = ["derive"] }
+
+env_logger = "0.11.5"
+pollster = "0.3.0"
+
+wasm-bindgen = "0.2.93"
+web-sys = "0.3.70"
+wasm-bindgen-futures = "0.4.43"

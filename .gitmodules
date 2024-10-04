@@ -1,3 +1,6 @@
 [submodule "lib/vulkano"]
 	path = lib/vulkano
 	url = https://github.com/vulkano-rs/vulkano.git
+[submodule "lib/imgui-winit-support"]
+	path = lib/imgui-winit-support
+	url = https://github.com/imgui-rs/imgui-winit-support
