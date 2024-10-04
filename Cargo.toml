@@ -4,26 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-wgpu = { version = "22.1.0", default-features = false, features = [
-    "wgsl",
-    "dx12",
-    "metal",
-] }
+wgpu = { version = "0.19" }
 
-# change to wayland if window icons look better
-winit = { version = "0.29", default-features = false, features = ["rwh_06", "x11"] }
-raw-window-handle = "0.6.2"
-# winit = "0.29"
-# imgui = { version = "0.12", git = "https://github.com/imgui-rs/imgui-rs" }
+winit = "0.29"
+raw-window-handle = "0.5"
 
-egui = "0.28.1"
-egui-winit = "0.28.1"
-egui-wgpu = { version = "0.28.1",features = ["winit"] }
+imgui = "0.12"
+imgui-winit-support = "0.12"
+imgui-wgpu = { git = "https://github.com/Yatekii/imgui-wgpu-rs", version = "0.24" }
 
 cgmath = "0.18"
-env_logger = "0.11.5"
-pollster = "0.3.0"
-
-wasm-bindgen = "0.2.93"
-web-sys = "0.3.70"
-wasm-bindgen-futures = "0.4.43"
+env_logger = "0.10"
+pollster = "0.3"
+rand = "0.8"
+ansi_term = "0.12.1"
+log = "0.4.22"

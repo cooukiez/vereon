@@ -1,0 +1,1 @@
+mangohud ./target/release/vereon
