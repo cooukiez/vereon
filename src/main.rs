@@ -1,113 +1,126 @@
 use std::borrow::Cow;
-use egui::Context;
-use egui_wgpu::wgpu::{CommandEncoder, Device, Queue, StoreOp, TextureFormat, TextureView};
-use egui_wgpu::{wgpu, Renderer, ScreenDescriptor};
-use egui_winit::State;
+use std::{env, io};
+use std::io::Write;
+use imgui_wgpu::{Renderer, RendererConfig};
+use pollster::block_on;
+
+use std::time::Instant;
+use ansi_term::Color::{Blue, Red, Yellow};
+use ansi_term::Style;
+use env_logger::{Builder, Target};
+use imgui::{Condition, Context, FontSource};
+use imgui_winit_support::WinitPlatform;
+use log::{info, LevelFilter};
+use rand::prelude::StdRng;
+use rand::{Rng, SeedableRng};
 use winit::{
+    dpi::LogicalSize,
     event::{Event, WindowEvent},
-    event_loop::EventLoop,
+    event_loop::{ControlFlow, EventLoop},
+    keyboard::{Key, NamedKey},
+    window::WindowBuilder,
     window::Window,
 };
 
-pub struct EguiRenderer {
-    state: State,
-    renderer: Renderer,
+const CHILD_OFFSET: u32 = 24;
+const SVO_DEPTH: u8 = 8;
+
+pub trait Octant {
+    fn set_child(&self, child: u32) -> u32;
+    fn check_child(&self, child: u32) -> bool;
+    fn has_children(&self) -> bool;
+    fn set_first_child_index(&self, index: u32) -> u32;
+    fn first_child_index(&self) -> u32;
+    fn child_mask(&self) -> u8;
+    fn set_child_mask(&self, mask: u8) -> u32;
+    fn child_count(&self) -> u32;
 }
 
-impl EguiRenderer {
-    pub fn context(&self) -> &Context {
-        self.state.egui_ctx()
+impl Octant for u32 {
+    fn set_child(&self, child: u32) -> u32 {
+        self | 1u32 << (child + CHILD_OFFSET)
     }
 
-    pub fn new(
-        device: &Device,
-        output_color_format: TextureFormat,
-        output_depth_format: Option<TextureFormat>,
-        msaa_samples: u32,
-        window: &Window,
-    ) -> EguiRenderer {
-        let egui_context = Context::default();
+    fn check_child(&self, child: u32) -> bool {
+        self & (1u32 << (child + CHILD_OFFSET)) > 0
+    }
 
-        let egui_state = egui_winit::State::new(
-            egui_context,
-            egui::viewport::ViewportId::ROOT,
-            &window,
-            Some(window.scale_factor() as f32),
-            None,
-        );
-        let egui_renderer = Renderer::new(
-            device,
-            output_color_format,
-            output_depth_format,
-            msaa_samples,
-        );
+    fn has_children(&self) -> bool {
+        self & 0b11111111_00000000_00000000_00000000 > 0
+    }
 
-        EguiRenderer {
-            state: egui_state,
-            renderer: egui_renderer,
+    fn set_first_child_index(&self, index: u32) -> u32 {
+        (self & 0b11111111_00000000_00000000_00000000) | (index & 0b00000000_11111111_11111111_11111111)
+    }
+
+    fn first_child_index(&self) -> u32 {
+        self & 0b00000000_11111111_11111111_11111111
+    }
+
+    fn child_mask(&self) -> u8 {
+        ((self & 0b11111111_00000000_00000000_00000000) >> CHILD_OFFSET) as u8
+    }
+
+    fn set_child_mask(&self, mask: u8) -> u32 {
+        (self & 0b00000000_11111111_11111111_11111111) | (((mask as u32) << CHILD_OFFSET) & 0b11111111_00000000_00000000_00000000)
+    }
+
+    fn child_count(&self) -> u32 {
+        (self >> CHILD_OFFSET).count_ones()
+    }
+}
+
+pub fn encode_node(child_mask: u8, first_child_index: u32) -> u32 {
+    ((child_mask as u32) << CHILD_OFFSET) | (first_child_index & 0b00000000_11111111_11111111_11111111)
+}
+
+
+struct SVO {
+    nodes: Vec<u32>,
+    depth: u8,
+}
+
+impl SVO {
+    fn new(depth: u8) -> Self {
+        SVO {
+            // insert root
+            nodes: Vec::from([0]),
+            depth,
         }
     }
 
-    pub fn handle_input(&mut self, window: &Window, event: &WindowEvent) {
-        self.state.on_window_event(window, event);
+    fn gen_random_svo(&mut self, seed: u64) {
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        self.gen_random_branch(&mut rng, 0, 0); // start at root index & depth
     }
 
-    pub fn ppp(&mut self, v: f32) {
-        self.state.egui_ctx().set_pixels_per_point(v);
-    }
+    fn gen_random_branch(&mut self, rng: &mut StdRng, cur_index: usize, cur_depth: u8) {
+        if cur_depth < self.depth {
+            let child_mask = rng.gen::<u8>();
+            let first_child_index = self.nodes.len() as u32;
+            let node = encode_node(child_mask, first_child_index);
+            self.nodes[cur_index] = node;
 
-    pub fn draw(
-        &mut self,
-        device: &Device,
-        queue: &Queue,
-        encoder: &mut CommandEncoder,
-        window: &Window,
-        window_surface_view: &TextureView,
-        screen_descriptor: ScreenDescriptor,
-        run_ui: impl FnOnce(&Context),
-    ) {
-        self.state
-            .egui_ctx()
-            .set_pixels_per_point(screen_descriptor.pixels_per_point);
+            for i in 0..8 {
+                self.nodes.push(0);
 
-        let raw_input = self.state.take_egui_input(window);
-        let full_output = self.state.egui_ctx().run(raw_input, |ui| {
-            run_ui(self.state.egui_ctx());
-        });
-
-        self.state
-            .handle_platform_output(window, full_output.platform_output);
-
-        let tris = self
-            .state
-            .egui_ctx()
-            .tessellate(full_output.shapes, self.state.egui_ctx().pixels_per_point());
-        for (id, image_delta) in &full_output.textures_delta.set {
-            self.renderer
-                .update_texture(device, queue, *id, image_delta);
+                if node.check_child(i) {
+                    self.gen_random_branch(rng, (first_child_index + i) as usize, cur_depth + 1);
+                }
+            }
         }
-        self.renderer
-            .update_buffers(device, queue, encoder, &tris, &screen_descriptor);
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: window_surface_view,
-                resolve_target: None,
-                ops: egui_wgpu::wgpu::Operations {
-                    load: egui_wgpu::wgpu::LoadOp::Load,
-                    store: StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            label: Some("egui main render pass"),
-            occlusion_query_set: None,
-        });
-        self.renderer.render(&mut rpass, &tris, &screen_descriptor);
-        drop(rpass);
-        for x in &full_output.textures_delta.free {
-            self.renderer.free_texture(x)
-        }
+
+        return;
     }
+
+    fn count_notes(&self) -> u32 {
+        self.nodes.iter().map(|&n| n > 1).count() as u32
+    }
+}
+
+struct Uniform {
+    
 }
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
@@ -115,62 +128,59 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     size.width = size.width.max(1);
     size.height = size.height.max(1);
 
-    let instance = wgpu::Instance::default();
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::PRIMARY,
+        ..Default::default()
+    });
 
-    let surface = instance.create_surface(&window).unwrap();
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            force_fallback_adapter: false,
-            // Request an adapter which can render to our surface
-            compatible_surface: Some(&surface),
-        })
-        .await
-        .expect("Failed to find an appropriate adapter");
+    let surf = instance.create_surface(&window).unwrap();
 
-    // Create the logical device and command queue
-    let (device, queue) = adapter
+    let hidpi_factor = window.scale_factor();
+
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: Some(&surf),
+        force_fallback_adapter: false,
+    })).unwrap();
+
+    let (dev, queue) = adapter
         .request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
                 required_features: wgpu::Features::empty(),
-                // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                 required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                    .using_resolution(adapter.limits()), 
+                    .using_resolution(adapter.limits()),
             },
             None,
         )
         .await
-        .expect("Failed to create device");
+        .expect("failed to create device.");
 
-    // Load the shaders from disk
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    let shader = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
         source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
     });
 
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    let pipeline_layout = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
         bind_group_layouts: &[],
         push_constant_ranges: &[],
     });
 
-    let swapchain_capabilities = surface.get_capabilities(&adapter);
+    let swapchain_capabilities = surf.get_capabilities(&adapter);
     let swapchain_format = swapchain_capabilities.formats[0];
 
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    let render_pipeline = dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: None,
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: "vs_main",
             buffers: &[],
-            compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: "fs_main",
-            compilation_options: Default::default(),
             targets: &[Some(swapchain_format.into())],
         }),
         primitive: wgpu::PrimitiveState::default(),
@@ -179,106 +189,190 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         multiview: None,
     });
 
-    let mut config = surface
+    let mut surf_cfg = surf
         .get_default_config(&adapter, size.width, size.height)
         .unwrap();
-    surface.configure(&device, &config);
 
-    let mut egui_renderer = EguiRenderer::new(&device, config.format, None, 1, &window);
+    surf.configure(&dev, &surf_cfg);
 
-    let window = &window;
+    //
+    // imgui setup
+    //
+    let mut imgui = Context::create();
+    let mut platform = WinitPlatform::init(&mut imgui);
+    platform.attach_window(imgui.io_mut(), &window, imgui_winit_support::HiDpiMode::Default);
+    imgui.set_ini_filename(None);
+
+    let font_size = (13.0 * hidpi_factor) as f32;
+    imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
+
+    imgui.fonts().add_font(&[FontSource::DefaultFontData {
+        config: Some(imgui::FontConfig {
+            oversample_h: 1,
+            pixel_snap_h: true,
+            size_pixels: font_size,
+            ..Default::default()
+        }),
+    }]);
+
+    let renderer_cfg = RendererConfig {
+        texture_format: surf_cfg.format,
+        ..Default::default()
+    };
+
+    let mut renderer = Renderer::new(&mut imgui, &dev, &queue, renderer_cfg);
+
+    //
+    // main loop, window event handling
+    //
+    let mut last_frame = Instant::now();
+    let mut last_cursor = None;
+
+    let clear_color = wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 };
+
     event_loop
-        .run(move |event, target| {
-            // Have the closure take ownership of the resources.
-            // `event_loop.run` never returns, therefore we must do this to ensure
-            // the resources are properly cleaned up.
+        .run(|event, elwt| {
             let _ = (&instance, &adapter, &shader, &pipeline_layout);
+            elwt.set_control_flow(ControlFlow::Poll);
 
-            if let Event::WindowEvent {
-                window_id: _,
-                event,
-            } = event
-            {
-                match event {
+            match event {
+                Event::AboutToWait => window.request_redraw(),
+                Event::WindowEvent { ref event, .. } => match event {
                     WindowEvent::Resized(new_size) => {
-                        // Reconfigure the surface with the new size
-                        config.width = new_size.width.max(1);
-                        config.height = new_size.height.max(1);
-                        surface.configure(&device, &config);
-                        // On macos the window needs to be redrawn manually after resizing
+                        surf_cfg.width = new_size.width.max(1);
+                        surf_cfg.height = new_size.height.max(1);
+                        surf.configure(&dev, &surf_cfg);
                         window.request_redraw();
                     }
+                    WindowEvent::CloseRequested => elwt.exit(),
+                    WindowEvent::KeyboardInput { event, .. } => {
+                        if let Key::Named(NamedKey::Escape) = event.logical_key {
+                            if event.state.is_pressed() {
+                                elwt.exit();
+                            }
+                        }
+                    }
                     WindowEvent::RedrawRequested => {
-                        let frame = surface
+                        let delta_time = last_frame.elapsed();
+                        imgui.io_mut().update_delta_time(delta_time);
+                        last_frame = Instant::now();
+
+                        let frame = surf
                             .get_current_texture()
-                            .expect("Failed to acquire next swap chain texture");
+                            .expect("failed to acquire next swapchain texture.");
+
+                        platform
+                            .prepare_frame(imgui.io_mut(), &window)
+                            .expect("failed to prepare frame.");
+
+                        let ui = imgui.frame();
+
+                        {
+                            ui.window("info")
+                                .size([400.0, 200.0], Condition::FirstUseEver)
+                                .position([400.0, 200.0], Condition::FirstUseEver)
+                                .build(|| {
+                                    ui.text(format!("frame_time: {delta_time:?}"));
+                                    let mouse_pos = ui.io().mouse_pos;
+                                    ui.text(format!(
+                                        "mouse_pos: ({:.1},{:.1})",
+                                        mouse_pos[0], mouse_pos[1]
+                                    ));
+                                });
+                        }
+
+                        let mut encoder: wgpu::CommandEncoder = dev
+                            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                         let view = frame
                             .texture
                             .create_view(&wgpu::TextureViewDescriptor::default());
-                        let mut encoder =
-                            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                                label: None,
-                            });
+
+                        if last_cursor != Some(ui.mouse_cursor()) {
+                            last_cursor = Some(ui.mouse_cursor());
+                            platform.prepare_render(ui, &window);
+                        }
+
                         {
-                            let mut rpass =
-                                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                                    label: None,
-                                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                        view: &view,
-                                        resolve_target: None,
-                                        ops: wgpu::Operations {
-                                            load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
-                                            store: wgpu::StoreOp::Store,
-                                        },
-                                    })],
-                                    depth_stencil_attachment: None,
-                                    timestamp_writes: None,
-                                    occlusion_query_set: None,
-                                });
-                            rpass.set_pipeline(&render_pipeline);
-                            rpass.draw(0..3, 0..1);
+                            let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: None,
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &view,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Clear(clear_color),
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                })],
+                                depth_stencil_attachment: None,
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                            });
+
+                            renderpass.set_pipeline(&render_pipeline);
+                            renderpass.draw(0..3, 0..1);
+
+                            renderer
+                                .render(imgui.render(), &queue, &dev, &mut renderpass)
+                                .expect("rendering imgui failed.");
                         }
 
                         queue.submit(Some(encoder.finish()));
                         frame.present();
                     }
-                    WindowEvent::CloseRequested => target.exit(),
                     _ => {}
-                };
+                },
+                _ => {}
             }
-        })
-        .unwrap();
+
+            platform.handle_event(imgui.io_mut(), &window, &event);
+        }).unwrap();
 }
 
-pub fn main() {
-    let event_loop = EventLoop::new().unwrap();
-    #[allow(unused_mut)]
-    let mut builder = winit::window::WindowBuilder::new();
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen::JsCast;
-        use winit::platform::web::WindowBuilderExtWebSys;
-        let canvas = web_sys::window()
-            .unwrap()
-            .document()
-            .unwrap()
-            .get_element_by_id("canvas")
-            .unwrap()
-            .dyn_into::<web_sys::HtmlCanvasElement>()
-            .unwrap();
-        builder = builder.with_canvas(Some(canvas));
-    }
-    let window = builder.build(&event_loop).unwrap();
+fn main() {
+    env::set_var("RUST_LOG", "info");
+    let mut builder = Builder::from_default_env();
 
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        env_logger::init();
-        pollster::block_on(run(event_loop, window));
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-        console_log::init().expect("could not initialize logger");
-        wasm_bindgen_futures::spawn_local(run(event_loop, window));
-    }
+    builder
+        .target(Target::Stdout)
+        .format(|buf, record| {
+            let level = record.level();
+            let style = match level {
+                log::Level::Error => Style::new().bold().fg(Red),
+                log::Level::Warn => Style::new().bold().fg(Yellow),
+                log::Level::Info => Style::new().bold().fg(Blue),
+                //log::Level::Debug => Style::new().fg(Purple),
+                //log::Level::Trace => Style::new().fg(Green),
+                _ => return Ok(()),
+            };
+
+            buf.write_fmt(format_args!(
+                "{}: {}\n",
+                style.paint(record.level().to_string()),
+                record.args()
+            ))
+                .map_err(|_| io::Error::new(io::ErrorKind::Other, "Error writing log"))
+        })
+        .filter(None, LevelFilter::Trace) // Adjust the filter to show all levels
+        .init();
+
+    println!();
+    info!("logger initialized.");
+
+    let event_loop = EventLoop::new().unwrap();
+
+    let window = {
+        let size = LogicalSize::new(1280.0, 720.0);
+        WindowBuilder::new()
+            .with_inner_size(size)
+            .with_title(env!("CARGO_PKG_NAME"))
+            .build(&event_loop)
+            .unwrap()
+    };
+
+    let mut svo = SVO::new(SVO_DEPTH);
+    svo.gen_random_svo(0);
+
+    info!("filled node count: {}", svo.count_notes());
+
+    block_on(run(event_loop, window));
 }
