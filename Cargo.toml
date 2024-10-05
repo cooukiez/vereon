@@ -20,4 +20,4 @@ pollster = "0.3"
 rand = "0.8"
 ansi_term = "0.12.1"
 log = "0.4.22"
-bytemuck = "1.18.0"
+bytemuck = { version = "1.18", features = [ "derive" ] }

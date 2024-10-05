@@ -8,7 +8,7 @@ use std::time::Instant;
 use ansi_term::Color::{Blue, Red, Yellow};
 use ansi_term::Style;
 use env_logger::{Builder, Target};
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use imgui::{Condition, Context, FontSource};
 use imgui_winit_support::WinitPlatform;
 use log::{info, LevelFilter};
@@ -122,10 +122,56 @@ impl SVO {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniform {
-    proj_mat: Mat4,
+    proj_mat: [[f32; 4]; 4],
+    time: u32,
+    _padding: [u32; 3],
 }
+
+impl Default for Uniform {
+    fn default() -> Self {
+        Uniform {
+            proj_mat: Mat4::default().to_cols_array_2d(),
+            time: 0,
+            _padding: [0; 3],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    uv: [f32; 2],
+}
+
+impl Vertex {
+    const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2];
+
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBUTES,
+        }
+    }
+}
+
+const VERTICES: &[Vertex] = &[
+    Vertex { position: [-1.0, -1.0, 0.0], uv: [0.0, 0.0] },
+    Vertex { position: [1.0, -1.0, 0.0], uv: [1.0, 0.0] },
+    Vertex { position: [1.0, 1.0, 0.0], uv: [1.0, 1.0] },
+    Vertex { position: [-1.0, 1.0, 0.0], uv: [0.0, 1.0] },
+];
+
+const INDICES: &[u16] = &[
+    0, 1, 2,
+    2, 3, 0,
+];
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
     let mut size = window.inner_size();
@@ -159,15 +205,78 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         )
         .await
         .expect("failed to create device.");
+    //
+    // create buffers
+    //
+    let mut uniform: Uniform = Default::default();
 
+    let uniform_buffer = dev.create_buffer_init(
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }
+    );
+
+    let num_vertices = VERTICES.len() as u32;
+    let vertex_buffer = dev.create_buffer_init(
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("vertex_buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        }
+    );
+
+    let num_indices = INDICES.len() as u32;
+    let index_buffer = dev.create_buffer_init(
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("index_buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        }
+    );
+    //
+    // bind group
+    //
+    let uniform_bind_group_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }
+        ],
+        label: Some("uniform_bind_group_layout"),
+    });
+
+    let uniform_bind_group = dev.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &uniform_bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }
+        ],
+        label: Some("camera_bind_group"),
+    });
+    //
+    // create pipeline
+    //
     let shader = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
         source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
     });
 
     let pipeline_layout = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[],
+        label: Some("render_pipeline_layout"),
+        bind_group_layouts: &[
+            &uniform_bind_group_layout,
+        ],
         push_constant_ranges: &[],
     });
 
@@ -180,7 +289,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: "vs_main",
-            buffers: &[],
+            buffers: &[Vertex::desc()],
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
@@ -198,17 +307,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .unwrap();
 
     surf.configure(&dev, &surf_cfg);
-    //
-    //
-    //
-    let uniform = Uniform { proj_mat: Mat4::default() };
-
-    let uniform_buffer = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Uniform Buffer"),
-        contents: bytemuck::cast_slice(&[uniform]),
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-    });
-
     //
     // imgui setup
     //
@@ -275,6 +373,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             .get_current_texture()
                             .expect("failed to acquire next swapchain texture.");
 
+                        uniform.time += 1;
+                        queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
+
                         platform
                             .prepare_frame(imgui.io_mut(), &window)
                             .expect("failed to prepare frame.");
@@ -307,7 +408,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         }
 
                         {
-                            let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                                 label: None,
                                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                     view: &view,
@@ -322,11 +423,14 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                 occlusion_query_set: None,
                             });
 
-                            renderpass.set_pipeline(&render_pipeline);
-                            renderpass.draw(0..3, 0..1);
+                            render_pass.set_pipeline(&render_pipeline);
+                            render_pass.set_bind_group(0, &uniform_bind_group, &[]);
+                            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                            render_pass.draw_indexed(0..num_indices, 0, 0..1);
 
                             renderer
-                                .render(imgui.render(), &queue, &dev, &mut renderpass)
+                                .render(imgui.render(), &queue, &dev, &mut render_pass)
                                 .expect("rendering imgui failed.");
                         }
 
