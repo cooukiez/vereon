@@ -27,5 +27,6 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.uv * sin(f32(unif_buf.time) / 1000.0), vec2<f32>(1.0));
+    let col = vec3<f32>(0.5) + 0.5 * cos(vec3<f32>(unif_buf.time) / 1000.0 + in.uv.xyx + vec3(0,2,4));
+    return vec4<f32>(col, 1.0);
 }
