@@ -8,7 +8,7 @@ use std::time::Instant;
 use ansi_term::Color::{Blue, Green, Purple, Red, Yellow};
 use ansi_term::Style;
 use env_logger::{Builder, Target};
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec2, Vec3};
 use imgui::{Condition, Context, FontSource};
 use imgui_winit_support::WinitPlatform;
 use log::{info, LevelFilter};
@@ -23,6 +23,7 @@ use winit::{
     window::WindowBuilder,
     window::Window,
 };
+use winit::dpi::Position;
 
 const CHILD_OFFSET: u32 = 24;
 const SVO_DEPTH: u8 = 8;
@@ -132,7 +133,7 @@ struct Uniform {
 impl Default for Uniform {
     fn default() -> Self {
         Uniform {
-            proj_mat: Mat4::default().to_cols_array_2d(),
+            proj_mat: Mat4::IDENTITY.to_cols_array_2d(),
             time: 0,
             _padding: [0; 3],
         }
@@ -172,6 +173,128 @@ const INDICES: &[u16] = &[
     0, 1, 2,
     2, 3, 0,
 ];
+
+struct Camera {
+    // settings
+    mov_speed_slow: f32,
+    mov_speed_fast: f32,
+    
+    fov: f32,
+    sensitivity: f32,
+
+    z_near: f32,
+    z_far: f32,
+
+    rotation_min: Vec2, // x: yaw, y: pitch
+    rotation_max: Vec2, // x: yaw, y: pitch
+
+    up_axis: Vec3,
+
+    enable_matrices: bool,
+
+    // internal
+    rotation: Vec2, // x: yaw, y: pitch
+
+    front: Vec3,
+    right: Vec3,
+    up: Vec3,
+
+    position: Vec3,
+
+    mov_speed: f32,
+    mov_lin: Vec3,
+    mov_lat: Vec3,
+
+    plane_u: Vec3,
+    plane_v: Vec3,
+
+    aspect_ratio: f32,
+    fov_tan: f32,
+
+    proj: Mat4,
+}
+
+impl Camera {
+    fn update_proj(&mut self, window_width: u32, window_height: u32) {
+        self.aspect_ratio = (window_width as f32) / (window_height as f32);
+        if self.enable_matrices {
+            self.proj = Mat4::perspective_lh(self.fov_tan, self.aspect_ratio, self.z_near, self.z_far);
+        }
+    }
+
+    fn update_camera_rotation(&mut self, mouse_delta: Vec2) {
+        self.rotation -= mouse_delta * self.sensitivity;
+        self.rotation = self.rotation.clamp(self.rotation_min, self.rotation_max);
+
+        self.front = Vec3::new(
+            self.rotation.x.to_radians().cos() * self.rotation.y.to_radians().cos(),
+            self.rotation.y.to_radians().sin(),
+            self.rotation.x.to_radians().sin() * self.rotation.y.to_radians().cos(),
+        ).normalize();
+
+        self.right = self.front.cross(self.up_axis).normalize();
+        self.up = self.right.cross(self.front).normalize();
+
+        self.mov_lin = self.front * self.mov_speed;
+        self.mov_lat = self.right * self.mov_speed;
+
+        self.plane_u = self.right * self.aspect_ratio * self.fov_tan;
+        self.plane_v = self.up * self.aspect_ratio * self.fov_tan;
+    }
+
+    fn get_view_proj(&self) -> Mat4 {
+        if self.enable_matrices {
+            let view = Mat4::look_at_lh(self.position, self.position + self.front, self.up);
+            self.proj * view
+        } else {
+            Mat4::IDENTITY
+        }
+    }
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Camera {
+            // settings
+            mov_speed_slow: 5.0,
+            mov_speed_fast: 10.0,
+            
+            fov: 60.0,
+            sensitivity: 0.1,
+
+            z_near: 0.1,
+            z_far: 100.0,
+
+            rotation_min: Vec2::new(-180.0, -89.0),
+            rotation_max: Vec2::new(180.0, 89.0),
+
+            up_axis: Vec3::new(0.0, 1.0, 0.0),
+
+            enable_matrices: false,
+
+            // internal
+            rotation: Vec2::ZERO,
+
+            front: Vec3::ZERO,
+            right: Vec3::ZERO,
+            up: Vec3::ZERO,
+
+            position: Vec3::ZERO,
+
+            mov_speed: 0.0,
+            mov_lin: Vec3::ZERO,
+            mov_lat: Vec3::ZERO,
+
+            plane_u: Vec3::ZERO,
+            plane_v: Vec3::ZERO,
+
+            aspect_ratio: 0.0,
+            fov_tan: 0.0,
+
+            proj: Mat4::IDENTITY,
+        }
+    }
+}
 
 async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
     let mut size = window.inner_size();
