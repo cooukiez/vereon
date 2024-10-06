@@ -4,6 +4,8 @@ struct Uniform {
 };
 @group(0) @binding(0)
 var<uniform> unif_buf: Uniform;
+@group(0) @binding(1)
+var<storage, read> svo: array<u32>;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,

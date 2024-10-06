@@ -5,7 +5,7 @@ use imgui_wgpu::{Renderer, RendererConfig};
 use pollster::block_on;
 
 use std::time::Instant;
-use ansi_term::Color::{Blue, Red, Yellow};
+use ansi_term::Color::{Blue, Green, Purple, Red, Yellow};
 use ansi_term::Style;
 use env_logger::{Builder, Target};
 use glam::{Mat4, Vec3};
@@ -173,13 +173,14 @@ const INDICES: &[u16] = &[
     2, 3, 0,
 ];
 
-async fn run(event_loop: EventLoop<()>, window: Window) {
+async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
     let mut size = window.inner_size();
     size.width = size.width.max(1);
     size.height = size.height.max(1);
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,
+        flags: wgpu::InstanceFlags::debugging(),
         ..Default::default()
     });
 
@@ -198,7 +199,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             &wgpu::DeviceDescriptor {
                 label: None,
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
+                required_limits: wgpu::Limits {
+                    max_storage_buffers_per_shader_stage: 1,
+                    max_storage_buffer_binding_size:  !(!0 << CHILD_OFFSET),
+                    
+                    ..wgpu::Limits::downlevel_webgl2_defaults()
+                }
                     .using_resolution(adapter.limits()),
             },
             None,
@@ -218,6 +224,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         }
     );
 
+    // TODO: add vertex staging buffer
     let num_vertices = VERTICES.len() as u32;
     let vertex_buffer = dev.create_buffer_init(
         &wgpu::util::BufferInitDescriptor {
@@ -227,6 +234,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         }
     );
 
+    // TODO: add index staging buffer
     let num_indices = INDICES.len() as u32;
     let index_buffer = dev.create_buffer_init(
         &wgpu::util::BufferInitDescriptor {
@@ -235,34 +243,57 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             usage: wgpu::BufferUsages::INDEX,
         }
     );
+
+    // TODO: add svo staging buffer
+    let svo_buffer = dev.create_buffer_init(
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("svo_buffer"),
+            contents: bytemuck::cast_slice(&svo.nodes),
+            usage: wgpu::BufferUsages::STORAGE,
+        }
+    );
     //
     // bind group
     //
-    let uniform_bind_group_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    let bind_group_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         entries: &[
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::all(),
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
                 count: None,
-            }
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::all(),
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
         ],
-        label: Some("uniform_bind_group_layout"),
+        label: Some("bind_group_layout"),
     });
 
-    let uniform_bind_group = dev.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &uniform_bind_group_layout,
+    let bind_group = dev.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &bind_group_layout,
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
                 resource: uniform_buffer.as_entire_binding(),
-            }
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: svo_buffer.as_entire_binding(),
+            },
         ],
-        label: Some("camera_bind_group"),
+        label: Some("bind_group"),
     });
     //
     // create pipeline
@@ -275,7 +306,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let pipeline_layout = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("render_pipeline_layout"),
         bind_group_layouts: &[
-            &uniform_bind_group_layout,
+            &bind_group_layout,
         ],
         push_constant_ranges: &[],
     });
@@ -424,7 +455,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             });
 
                             render_pass.set_pipeline(&render_pipeline);
-                            render_pass.set_bind_group(0, &uniform_bind_group, &[]);
+                            render_pass.set_bind_group(0, &bind_group, &[]);
                             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                             render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                             render_pass.draw_indexed(0..num_indices, 0, 0..1);
@@ -492,5 +523,5 @@ fn main() {
 
     info!("filled node count: {}", svo.count_notes());
 
-    block_on(run(event_loop, window));
+    block_on(run(event_loop, window, svo));
 }
