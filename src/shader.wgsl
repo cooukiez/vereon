@@ -1,10 +1,16 @@
 struct Uniform {
     view_proj: mat4x4<f32>,
+    cam_pos: vec4<f32>,
+    cam_dir: vec4<f32>,
+    cam_plane_u: vec4<f32>,
+    cam_plane_v: vec4<f32>,
+    res: vec2<u32>,
+    mouse: vec2<f32>,
     time: u32,
 };
 
 @group(0) @binding(0)
-var<uniform> unif_buf: Uniform;
+var<uniform> ubo: Uniform;
 @group(0) @binding(1)
 var<storage, read> svo: array<u32>;
 
@@ -38,11 +44,14 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // let col = vec3<f32>(0.5) + 0.5 * cos(vec3<f32>(unif_buf.time) / 1000.0 + in.uv.xyx + vec3(0,2,4));
+    // let col = vec3<f32>(0.5) + 0.5 * cos(vec3<f32>(ubo.time) / 1000.0 + in.uv.xyx + vec3(0,2,4));
+
+    var screen_pos: vec2<f32> = (in.uv * 2.0 - vec2<f32>(1.0)) * vec2<f32>(f32(ubo.res.x) / f32(ubo.res.y), 1.0);
+    var dir: vec3<f32> = ubo.cam_dir.xyz + screen_pos.x * ubo.cam_plane_u.xyz + screen_pos.y * ubo.cam_plane_v.xyz;
 
     var r: Ray = Ray(
-        vec3<f32>(0.0, 0.0, 0.0),
-        normalize(vec3<f32>(in.uv, 1.0)),
+        ubo.cam_pos.xyz,
+        dir,
     );
 
     var pos: vec3<f32>;
