@@ -87,32 +87,32 @@ fn raymarch_leaf(
     var iter: u32 = 0;
     var stack: array<u32, STACK_SIZE>;
 
-    var d_abs: vec3<f32> = abs(r.d);
+    var o: vec3<f32> = r.o;
+    var d: vec3<f32> = r.d;
+    var d_abs: vec3<f32> = abs(d);
 
     // get rid of small direction components, to avoid division by zero
-    /*
-    d_abs.x = select(EPS * sign(r.d.x), r.d.x, d_abs.x > EPS);
-    d_abs.y = select(EPS * sign(r.d.y), r.d.y, d_abs.y > EPS);
-    d_abs.z = select(EPS * sign(r.d.z), r.d.z, d_abs.z > EPS);
-    */
+    d.x = select(select(-EPS, EPS, d.x >= 0), d.x, d_abs.x > EPS);
+    d.y = select(select(-EPS, EPS, d.y >= 0), d.y, d_abs.y > EPS);
+    d.z = select(select(-EPS, EPS, d.z >= 0), d.z, d_abs.z > EPS);
 
     // precompute coefficients of tx(x), ty(y), tz(z)
     // octree is assumed to reside at coordinates [1, 2]
-    var t_coef: vec3<f32> = -1. / d_abs;
-    var t_bias: vec3<f32> = t_coef * r.o;
+    var t_coef: vec3<f32> = -1.0 / d_abs;
+    var t_bias: vec3<f32> = t_coef * o;
 
     // select octant mask to mirror the coordinate system,
     // so that ray direction is negative along axis
     var oct_mask: u32 = 0u;
-    if (r.d.x > 0.0) {
+    if (d.x > 0.0) {
         oct_mask = oct_mask ^ 1u;
         t_bias.x = 3.0 * t_coef.x - t_bias.x;
     }
-    if (r.d.y > 0.0) {
+    if (d.y > 0.0) {
         oct_mask = oct_mask ^ 2u;
         t_bias.y = 3.0 * t_coef.y - t_bias.y;
     }
-    if (r.d.z > 0.0) {
+    if (d.z > 0.0) {
         oct_mask = oct_mask ^ 4u;
         t_bias.z = 3.0 * t_coef.z - t_bias.z;
     }
@@ -120,15 +120,14 @@ fn raymarch_leaf(
     // intialize active span of t-values
     var t_min: f32 = max(max(2.0 * t_coef.x - t_bias.x, 2.0 * t_coef.y - t_bias.y), 2.0 * t_coef.z - t_bias.z);
     var t_max: f32 = min(min(t_coef.x - t_bias.x, t_coef.y - t_bias.y), t_coef.z - t_bias.z);
-
     t_min = max(t_min, 0.0);
     var h: f32 = t_max;
 
     // initialize current voxel to first child of root
-    var parent: u32 = 0u; // root
-    var cur: u32 = 0u; // first child of root
+    var parent: u32 = 0u; // first child index
+    var cur: u32 = 0u; // the current selected node
     var pos: vec3<f32> = vec3<f32>(1.0);
-    var idx: u32 = 0u;
+    var idx: u32 = 0u; // child index
 
     if (1.5 * t_coef.x - t_bias.x > t_min) {
         idx = idx ^ 1u;
@@ -146,44 +145,59 @@ fn raymarch_leaf(
     var scale: u32 = STACK_SIZE - 1;
     var scale_exp2: f32 = 0.5; // exp2( scale - STACK_SIZE )
 
+    // traverse voxels along the ray
+    // as long as the current voxel stays within the octree
     while (scale < STACK_SIZE) {
-        iter = iter + 1;
+        iter++;
+
+        // fetch child descriptor unless it is already valid
         if (cur == 0u) {
+            // READ
             cur = svo[parent + (idx ^ oct_mask)];
         }
+
+        // determine maximum t-value of the cube by
+        // evaluating tx(), ty(), tz() at its corner
         var t_corner: vec3<f32> = pos * t_coef - t_bias;
         var tc_max: f32 = min(min(t_corner.x, t_corner.y), t_corner.z);
 
+        // process voxel if the corresponding bit in
+        // if valid mask is set and the active t-span is non-empty
         if ((cur & 0x80000000u) != 0 && t_min <= t_max) {
+            // INTERSECT
+            // intersect active t-span with the cube and evaluate
+            // tx(), ty(), tz() at the center of the voxel
             var half_scale_exp2: f32 = scale_exp2 * 0.5;
             var t_center: vec3<f32> = half_scale_exp2 * t_coef + t_corner;
 
+            // leaf node
             if ((cur & 0x40000000u) != 0) {
                 break;
             }
 
+            // push to stack
             if (tc_max < h) {
                 stack[scale] = parent;
             }
-
             h = tc_max;
 
             parent = cur & 0x3fffffffu;
 
+            // select child voxel that the ray enters first
             idx = 0u;
-            scale = scale - 1u;
+            scale--;
             scale_exp2 = half_scale_exp2;
             if (t_center.x > t_min) {
                 idx = idx ^ 1u;
-                pos.x = pos.x + scale_exp2;
+                pos.x += scale_exp2;
             }
             if (t_center.y > t_min) {
                 idx = idx ^ 2u;
-                pos.y = pos.y + scale_exp2;
+                pos.y += scale_exp2;
             }
             if (t_center.z > t_min) {
                 idx = idx ^ 4u;
-                pos.z = pos.z + scale_exp2;
+                pos.z += scale_exp2;
             }
 
             cur = 0u;
@@ -191,44 +205,52 @@ fn raymarch_leaf(
             continue;
         }
 
+        // ADVANCE
+        // step along the ray
         var step_mask: u32 = 0u;
         if (t_corner.x <= tc_max) {
             step_mask = step_mask ^ 1u;
-            pos.x = pos.x - scale_exp2;
+            pos.x -= scale_exp2;
         }
         if (t_corner.y <= tc_max) {
             step_mask = step_mask ^ 2u;
-            pos.y = pos.y - scale_exp2;
+            pos.y -= scale_exp2;
         }
         if (t_corner.z <= tc_max) {
             step_mask = step_mask ^ 4u;
-            pos.z = pos.z - scale_exp2;
+            pos.z -= scale_exp2;
         }
 
+        // update active t-span and flip bits of the child slot index
         t_min = tc_max;
         idx = idx ^ step_mask;
 
         if ((idx & step_mask) != 0) {
             var differing_bits: u32 = 0;
 
+            // POP
+            // find the highest differing bit between the two positions
             if ((step_mask & 1u) != 0) {
-                differing_bits = differing_bits | (bitcast<u32>(pos.x) ^ bitcast<u32>(pos.x + scale_exp2));
+                differing_bits |= (bitcast<u32>(pos.x) ^ bitcast<u32>(pos.x + scale_exp2));
             }
             if ((step_mask & 2u) != 0) {
-                differing_bits = differing_bits | (bitcast<u32>(pos.y) ^ bitcast<u32>(pos.y + scale_exp2));
+                differing_bits |= (bitcast<u32>(pos.y) ^ bitcast<u32>(pos.y + scale_exp2));
             }
             if ((step_mask & 4u) != 0) {
-                differing_bits = differing_bits | (bitcast<u32>(pos.z) ^ bitcast<u32>(pos.z + scale_exp2));
+                differing_bits |= (bitcast<u32>(pos.z) ^ bitcast<u32>(pos.z + scale_exp2));
             }
+            // position of the highest differing bit
             scale = firstLeadingBit(differing_bits);
-            if (scale >= STACK_SIZE){
+            if (scale >= STACK_SIZE) {
                 break;
             }
 
-            scale_exp2 = bitcast<f32>((scale - STACK_SIZE + 127u) << 23u);
+            scale_exp2 = bitcast<f32>((scale - STACK_SIZE + 127u) << 23u); // exp2f(scale - s_max)
 
+            // restore parent voxel from the stack
             parent = stack[scale];
 
+            // round cube position and extract child slot index
             var shx: u32 = bitcast<u32>(pos.x) >> scale;
             var shy: u32 = bitcast<u32>(pos.y) >> scale;
             var shz: u32 = bitcast<u32>(pos.z) >> scale;
@@ -237,6 +259,8 @@ fn raymarch_leaf(
             pos.z = bitcast<f32>(shz << scale);
             idx = (shx & 1u) | ((shy & 1u) << 1u) | ((shz & 1u) << 2u);
 
+            // prevent same parent from being stored
+            // again and invalidate cached child descriptor
             h = 0.0;
             cur = 0u;
         }
@@ -250,7 +274,7 @@ fn raymarch_leaf(
         t_corner.y > t_corner.z),
         t_corner.x > t_corner.y && t_corner.x > t_corner.z);
 
-
+    // undo mirroring of the coordinate system
     if ((oct_mask & 1u) == 0u) {
         norm.x = -norm.x;
     }
@@ -261,7 +285,7 @@ fn raymarch_leaf(
         norm.z = -norm.z;
     }
 
-    // Undo mirroring of the coordinate system.
+    // undo mirroring of the coordinate system
     if ((oct_mask & 1u) != 0u) {
         pos.x = 3.0 - scale_exp2 - pos.x;
     }
@@ -273,7 +297,7 @@ fn raymarch_leaf(
     }
 
     // output results
-    *p_pos = clamp(r.o + t_min * r.d, pos, pos + scale_exp2);
+    *p_pos = clamp(o + t_min * d, pos, pos + scale_exp2);
     if (norm.x != 0.0) {
         (*p_pos).x = select(pos.x - EPS, pos.x + scale_exp2 + EPS * 2.0, norm.x > 0.0);
     }
