@@ -1,3 +1,4 @@
+use glam::Vec3;
 use crate::CHILD_OFFSET;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -56,6 +57,7 @@ pub fn encode_node(child_mask: u8, first_child_index: u32) -> u32 {
 
 pub struct SVO {
     pub nodes: Vec<u32>,
+    pub root_span: f32,
     pub depth: u8,
 }
 
@@ -64,6 +66,7 @@ impl SVO {
         SVO {
             // insert root
             nodes: Vec::from([0]),
+            root_span: 2u32.pow(depth as u32) as f32,
             depth,
         }
     }
@@ -89,8 +92,37 @@ impl SVO {
                 }
             }
         }
+    }
 
-        return;
+    pub fn insert_node_at_depth(&mut self, pos: Vec3, depth: u8) -> usize {
+        let mut cs = self.root_span; // span
+        let mut cd = 0; // depth
+        let mut node_idx = 0;
+
+        while cd < depth {
+            let node = self.nodes[node_idx];
+
+            cs *= 0.5;
+            let mut child_idx = 0;
+            if cs < pos.x { child_idx += 1; }
+            if cs < pos.y { child_idx += 2; }
+            if cs < pos.z { child_idx += 4; }
+
+            if !node.has_children() {
+                self.nodes[node_idx] = node.set_first_child_index(self.nodes.len() as u32);
+                for i in 0..8 { self.nodes.push(0); }
+            }
+
+            self.nodes[node_idx] = node.set_child(child_idx);
+            node_idx = (node.first_child_index() + child_idx) as usize;
+            cd += 1;
+        }
+
+        node_idx
+    }
+
+    pub fn insert_node(&mut self, pos: Vec3) -> usize {
+        self.insert_node_at_depth(pos, self.depth)
     }
 
     pub fn count_notes(&self) -> u32 {

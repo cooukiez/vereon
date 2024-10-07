@@ -14,7 +14,7 @@ use crate::types::{Uniform, Vertex, INDICES, VERTICES};
 use ansi_term::Color::{Blue, Red, Yellow};
 use ansi_term::Style;
 use env_logger::{Builder, Target};
-use glam::UVec2;
+use glam::{UVec2, Vec3};
 use glam::Vec2;
 use imgui::{Condition, Context, FontSource};
 use imgui_winit_support::WinitPlatform;
@@ -30,6 +30,9 @@ use winit::{
     window::Window,
     window::WindowBuilder,
 };
+use winit::event::ElementState;
+use winit::keyboard::SmolStr;
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 const CHILD_OFFSET: u32 = 24;
 const SVO_DEPTH: u8 = 8;
@@ -41,7 +44,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,
-        flags: wgpu::InstanceFlags::debugging(),
+        flags: wgpu::InstanceFlags::empty(),
         ..Default::default()
     });
 
@@ -80,7 +83,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
     cam.update_proj(size.width, size.height);
 
     let mut uniform: Uniform = Uniform {
-        cam_pos: cam.position.extend(0.0).to_array(),
+        cam_pos: cam.pos.extend(0.0).to_array(),
         cam_dir: cam.front.extend(0.0).to_array(),
         cam_plane_u: cam.plane_u.extend(0.0).to_array(),
         cam_plane_v: cam.plane_v.extend(0.0).to_array(),
@@ -261,10 +264,29 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                     }
                     WindowEvent::CloseRequested => elwt.exit(),
                     WindowEvent::KeyboardInput { event, .. } => {
-                        if let Key::Named(NamedKey::Escape) = event.logical_key {
-                            if event.state.is_pressed() {
-                                elwt.exit();
+                        if event.state == ElementState::Pressed {
+                            match event.key_without_modifiers().as_ref() {
+                                Key::Named(NamedKey::Escape) => {
+                                    elwt.exit();
+                                }
+                                
+                                Key::Character("w") => {
+                                    cam.pos += cam.mov_lin;
+                                }
+                                Key::Character("s") => {
+                                    cam.pos -= cam.mov_lin;
+                                }
+                                Key::Character("a") => {
+                                    cam.pos -= cam.mov_lat;
+                                }
+                                Key::Character("d") => {
+                                    cam.pos += cam.mov_lat;
+                                }
+                                _ => {},
                             }
+                            
+                            uniform.cam_pos = cam.pos.extend(0.0).to_array();
+                            queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
                         }
                     }
                     WindowEvent::CursorMoved { position, .. } => {
@@ -273,7 +295,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                         let mouse_delta = mouse
                             - Vec2::new(size.width as f32, size.height as f32)
                                 / (2.0 * hidpi_factor as f32);
-                        println!("mouse_delta: {:?}", mouse_delta);
+                        
                         cam.rotate(mouse_delta);
 
                         uniform.cam_dir = cam.front.extend(0.0).to_array();
@@ -292,6 +314,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                     }
                     WindowEvent::RedrawRequested => {
                         let delta_time = last_frame.elapsed();
+                        let fps = 1.0 / delta_time.as_secs_f32();
                         imgui.io_mut().update_delta_time(delta_time);
                         last_frame = Instant::now();
 
@@ -314,11 +337,15 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                                 .position([400.0, 200.0], Condition::FirstUseEver)
                                 .build(|| {
                                     ui.text(format!("frame_time: {delta_time:?}"));
+                                    ui.text(format!("fps: {fps}"));
+                                    
                                     let mouse_pos = ui.io().mouse_pos;
                                     ui.text(format!(
                                         "mouse_pos: ({:.1},{:.1})",
                                         mouse_pos[0], mouse_pos[1]
                                     ));
+                                    
+                                    ui.text(format!("pos: {:?}", cam.pos));
                                 });
                         }
 
@@ -420,8 +447,9 @@ fn main() {
             .unwrap()
     };
 
-    let mut svo = SVO::new(SVO_DEPTH);
-    svo.gen_random_svo(0);
+    let mut svo = SVO::new(3);
+    svo.insert_node(Vec3::from_array([2.0; 3]));
+    // svo.gen_random_svo(11482889049544778869);
 
     info!("filled node count: {}", svo.count_notes());
 

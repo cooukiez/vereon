@@ -26,7 +26,7 @@ pub struct Camera {
     pub right: Vec3,
     pub up: Vec3,
 
-    pub position: Vec3,
+    pub pos: Vec3,
 
     pub mov_speed: f32,
     pub mov_lin: Vec3,
@@ -73,7 +73,7 @@ impl Camera {
 
     pub fn get_view_proj(&self) -> Mat4 {
         if self.enable_matrices {
-            let view = Mat4::look_at_lh(self.position, self.position + self.front, self.up);
+            let view = Mat4::look_at_lh(self.pos, self.pos + self.front, self.up);
             self.proj * view
         } else {
             Mat4::IDENTITY
@@ -85,8 +85,8 @@ impl Default for Camera {
     fn default() -> Self {
         let mut cam = Camera {
             // settings
-            mov_speed_slow: 5.0,
-            mov_speed_fast: 10.0,
+            mov_speed_slow: 0.05,
+            mov_speed_fast: 0.1,
 
             fov: 60.0,
             sensitivity: 0.1,
@@ -109,7 +109,7 @@ impl Default for Camera {
             right: Vec3::ZERO,
             up: Vec3::ZERO,
 
-            position: Vec3::ZERO,
+            pos: Vec3::ZERO,
 
             mov_speed: 0.0,
             mov_lin: Vec3::ZERO,
@@ -125,6 +125,7 @@ impl Default for Camera {
         };
 
         cam.fov_tan = (cam.fov / 2.0).to_radians().tan();
+        cam.mov_speed = cam.mov_speed_slow;
         cam
     }
 }
