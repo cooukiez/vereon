@@ -44,7 +44,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,
-        flags: wgpu::InstanceFlags::empty(),
+        flags: wgpu::InstanceFlags::debugging(),
         ..Default::default()
     });
 

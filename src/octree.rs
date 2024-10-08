@@ -100,21 +100,19 @@ impl SVO {
         let mut node_idx = 0;
 
         while cd < depth {
-            let node = self.nodes[node_idx];
-
             cs *= 0.5;
             let mut child_idx = 0;
             if cs < pos.x { child_idx += 1; }
             if cs < pos.y { child_idx += 2; }
             if cs < pos.z { child_idx += 4; }
 
-            if !node.has_children() {
-                self.nodes[node_idx] = node.set_first_child_index(self.nodes.len() as u32);
+            if !self.nodes[node_idx].has_children() {
+                self.nodes[node_idx] = self.nodes[node_idx].set_first_child_index(self.nodes.len() as u32);
                 for i in 0..8 { self.nodes.push(0); }
             }
 
-            self.nodes[node_idx] = node.set_child(child_idx);
-            node_idx = (node.first_child_index() + child_idx) as usize;
+            self.nodes[node_idx] = self.nodes[node_idx].set_child(child_idx);
+            node_idx = (self.nodes[node_idx].first_child_index() + child_idx) as usize;
             cd += 1;
         }
 
