@@ -31,7 +31,6 @@ use winit::{
     window::WindowBuilder,
 };
 use winit::event::ElementState;
-use winit::keyboard::SmolStr;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 const CHILD_OFFSET: u32 = 24;
@@ -334,7 +333,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                         {
                             ui.window("info")
                                 .size([400.0, 200.0], Condition::FirstUseEver)
-                                .position([400.0, 200.0], Condition::FirstUseEver)
+                                .position([10.0, 10.0], Condition::FirstUseEver)
                                 .build(|| {
                                     ui.text(format!("frame_time: {delta_time:?}"));
                                     ui.text(format!("fps: {fps}"));
@@ -428,7 +427,7 @@ fn main() {
                 style.paint(record.level().to_string()),
                 record.args()
             ))
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Error writing log"))
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "error writing log."))
         })
         .filter(None, LevelFilter::Trace) // Adjust the filter to show all levels
         .init();
@@ -452,6 +451,7 @@ fn main() {
     // svo.gen_random_svo(11482889049544778869);
 
     info!("filled node count: {}", svo.count_notes());
+    svo.log_octree();
 
     block_on(run(event_loop, window, svo));
 }

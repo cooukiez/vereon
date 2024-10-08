@@ -1,4 +1,5 @@
 use glam::Vec3;
+use log::info;
 use crate::CHILD_OFFSET;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -108,7 +109,7 @@ impl SVO {
 
             if !self.nodes[node_idx].has_children() {
                 self.nodes[node_idx] = self.nodes[node_idx].set_first_child_index(self.nodes.len() as u32);
-                for i in 0..8 { self.nodes.push(0); }
+                for _ in 0..8 { self.nodes.push(0); }
             }
 
             self.nodes[node_idx] = self.nodes[node_idx].set_child(child_idx);
@@ -126,4 +127,11 @@ impl SVO {
     pub fn count_notes(&self) -> u32 {
         self.nodes.iter().map(|&n| n > 1).count() as u32
     }
-}
+    
+    pub fn log_octree(&self) {
+        info!("svo, depth: {}, root_span: {}", self.depth, self.root_span);
+        for (i, node) in self.nodes.iter().enumerate() {
+            info!("{i}: cm: {:#08b}, fci: {:?}", node.child_mask(), node.first_child_index());
+        }
+    }
+}   

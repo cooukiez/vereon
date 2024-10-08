@@ -15,7 +15,7 @@ var<uniform> ubo: Uniform;
 var<storage, read> svo: array<u32>;
 
 const EPS: f32 = 0.001;
-const STACK_SIZE: u32 = 3;
+const STACK_SIZE: u32 = 23;
 const CHILD_OFFSET: u32 = 24;
 
 struct VertexInput {
@@ -68,17 +68,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         &iter,
     );
 
+    if (mat_info == 3u) {
+        return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+    }
+
     //return vec4<f32>(vec4<f32>(f32(iter) / 100.0) + 0.5 * vec4<f32>(f32(mat_info == 1), f32(mat_info == 2), 1.0, 1.0));
     return vec4<f32>(f32(mat_info == 1));
 }
 
-/*
-*
-*   code is from theses repositories:
-*   https://code.google.com/archive/p/efficient-sparse-voxel-octrees/
-*   https://github.com/AdamYuan/SparseVoxelOctree/blob/master/shader/octree.glsl
-*
-*/
 fn raymarch_leaf(
     r: Ray,
     p_pos: ptr<function, vec3<f32>>,
@@ -101,7 +98,7 @@ fn raymarch_leaf(
     // precompute coefficients of tx(x), ty(y), tz(z)
     // octree is assumed to reside at coordinates [1, 2]
     var t_coef: vec3<f32> = -1.0 / d_abs;
-    var t_bias: vec3<f32> = t_coef * (o + vec3<f32>(1));
+    var t_bias: vec3<f32> = t_coef * (o);
 
     // select octant mask to mirror the coordinate system,
     // so that ray direction is negative along axis
@@ -149,7 +146,7 @@ fn raymarch_leaf(
 
     // traverse voxels along the ray
     // as long as the current voxel stays within the octree
-    while (scale < STACK_SIZE) {
+    while (scale < STACK_SIZE && scale > 0) {
         iter++;
 
         // fetch child descriptor unless it is already valid
@@ -172,7 +169,7 @@ fn raymarch_leaf(
 
         // process voxel if the corresponding bit in
         // if valid mask is set and the active t-span is non-empty
-        let child_shift: u32 = idx ^ oct_mask;
+        let child_shift: u32 = 8 - (idx ^ oct_mask);
         if (((cur << child_shift) & 0x80000000u) != 0 && t_min <= t_max) {
             // INTERSECT
             // intersect active t-span with the cube and evaluate
@@ -246,6 +243,12 @@ fn raymarch_leaf(
             if ((step_mask & 4u) != 0) {
                 differing_bits |= (bitcast<u32>(pos.z) ^ bitcast<u32>(pos.z + scale_exp2));
             }
+
+            if (differing_bits == 0) {
+                *p_mat = 3u;
+                return false;
+            }
+
             // position of the highest differing bit
             scale = firstLeadingBit(differing_bits);
 
@@ -317,64 +320,3 @@ fn raymarch_leaf(
 
     return scale < STACK_SIZE && t_min <= t_max;
 }
-
-/*
-fn raymarch_leaf_new(
-    r: Ray,
-    p_pos: ptr<function, vec3<f32>>,
-    p_norm: ptr<function, vec3<f32>>,
-    p_mat: ptr<function, u32>,
-    p_iter: ptr<function, u32>
-) -> bool {
-    var iter: u32 = 0;
-    var stack: array<u32, STACK_SIZE>;
-
-    var o: vec3<f32> = r.o;
-    var d: vec3<f32> = r.d;
-    var d_abs: vec3<f32> = abs(d);
-
-    var t_coef: vec3<f32> = 1.0 / d_abs;
-    var t_bias: vec3<f32> = t_coef * o;
-
-    var t_min: f32 = min(min(t_bias.x, t_bias.y), t_bias.z);
-
-    var t_1: vec3<f32> = t_coef - t_bias;
-    var t_max: f32 = min(min(t_1.x, t_1.y), t_1.z);
-
-    var parent: u32 = 0u;
-    var cur: u32 = 0u;
-
-    // child index
-    var idx: u32 = 0u;
-
-    //var hit_mask: vec3<f32> = vec3<f32>(lessThan(t_bias, min(t_bias.yzx, t_bias.zxy)));
-    //var idx: u32 = u32(hit_mask.x) | (u32(hit_mask.y) << 1) | (u32(hit_mask.z) << 2);
-
-    var pos: vec3<f32> = vec3<f32>(1.0);
-
-    var span: f32 = 0.5;
-    var depth: u32 = 0;
-
-    while (depth < STACK_SIZE) {
-        iter++;
-
-        // fetch child descriptor unless it is already valid
-        if (cur == 0u) {
-            // READ
-            cur = svo[parent & 0xFFFFFFu + (idx)]; // Todo: negative direction
-        }
-
-        // leaf node
-        if ((cur & 0xFF000000u) == 0) {
-            //*p_mat = cur & 0xFFFFFFu;
-            *p_mat = 1u;
-            break;
-        }
-
-        // has children
-        if ((cur & 0xFF000000u) != 0) {
-
-        }
-    }
-}
-+/
