@@ -20,6 +20,7 @@ use imgui::{Condition, Context, FontSource};
 use imgui_winit_support::WinitPlatform;
 use log::{info, LevelFilter};
 use std::time::Instant;
+use rand::Rng;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalPosition;
 use winit::{
@@ -452,9 +453,14 @@ fn main() {
             .unwrap()
     };
 
-    let mut svo = SVO::new(4);
+    let mut svo = SVO::new(SVO_DEPTH);
+    let mut rng = rand::thread_rng();
     svo.insert_node(Vec3::from_array([0.0; 3]));
-    // svo.gen_random_svo(11482889049544778869);
+    svo.insert_node(Vec3::from_array([2.0; 3]));
+    svo.insert_node(Vec3::from_array([4.0; 3]));
+    svo.insert_node(Vec3::from_array([8.0; 3]));
+
+    //svo.gen_random_svo(11482889049544778869);
 
     info!("filled node count: {}", svo.count_notes());
     svo.log_octree();

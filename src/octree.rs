@@ -85,13 +85,17 @@ impl SVO {
             let node = encode_node(child_mask, first_child_index);
             self.nodes[cur_index] = node;
 
-            for i in 0..8 {
+            for _ in 0..8 {
                 self.nodes.push(0);
-
+            }
+            
+            for i in 0..8 {
                 if node.check_child(i) {
                     self.gen_random_branch(rng, (first_child_index + i) as usize, cur_depth + 1);
                 }
             }
+        } else {
+            self.nodes[cur_index] = self.nodes[cur_index].set_first_child_index(0xFFFFFF);
         }
     }
 

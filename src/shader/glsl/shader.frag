@@ -28,7 +28,6 @@ struct Ray {
     vec3 d;
 };
 
-#define CHILD_OFFSET 24
 #define STACK_SIZE 23
 #define EPS 1e-6
 #define MAX_ITER 64
@@ -40,16 +39,17 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
     vec3 d_abs = abs(d);
 
     // get rid of small direction components, to avoid division by zero
+    /*
     d.x = d_abs.x > EPS ? d.x : (d.x >= 0 ? EPS : -EPS);
     d.y = d_abs.y > EPS ? d.y : (d.y >= 0 ? EPS : -EPS);
     d.z = d_abs.z > EPS ? d.z : (d.z >= 0 ? EPS : -EPS);
+    */
 
     // precompute coefficients of tx(x), ty(y), tz(z)
     // octree is assumed to reside at coordinates [1, 2]
     vec3 t_coef = -1.0 / d_abs;
-    vec3 t_bias = t_coef * o;
+    vec3 t_bias = t_coef * (o + vec3(1.0));
 
-    //uint oct_mask = 7;
     uint oct_mask = 0;
     vec3 inverse_origin = 3.0 * t_coef - t_bias;
     if (d.x > 0.0f) oct_mask ^= 1u, t_bias.x = inverse_origin.x;
@@ -65,8 +65,6 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
 
     float h = t_max;
     t_min = max(t_min, 0.0f);
-    //t_max = min(t_max, 1.0f);
-    //t_max = max(t_max, 1.0f);
 
     uint parent = svo.nodes[0];
     uint cur = 0;
@@ -85,7 +83,7 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
 
     // traverse voxels along the ray
     // as long as the current voxel stays witposhin the octree
-    while (iter < MAX_ITER && scale < STACK_SIZE) {
+    while (iter < MAX_ITER) {
         iter++;
 
         // fetch child descriptor unless it is already valid
@@ -110,40 +108,30 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
             float half_span = span * 0.5;
             vec3 t_center = half_span * t_coef + t_corner;
 
-            if (true) {
-            //if (t_min <= tv_max) {
-                // PUSH
-                // write current parent to the stack
-                if (tc_max < h) stack[scale] = parent;
-                h = tc_max;
+            // PUSH
+            // write current parent to the stack
+            if (tc_max < h) stack[scale] = parent;
+            h = tc_max;
 
-                // find child descriptor corresponding to the current voxel
-                uint index = (cur & 0xFFFFFF) + (idx ^ oct_mask);
-                if (index > 24) {
-                    mat_data = 3;
-                    break;
-                }
-                parent = svo.nodes[index];
+            // find child descriptor corresponding to the current voxel
+            parent = svo.nodes[(cur & 0xFFFFFF) + (idx ^ oct_mask)];
 
-                // check if node is a leaf
-                if ((parent & 0xFF000000) == 0 && (parent & 0xFFFFFF) != 0) {
-                    mat_data = 2;
-                    break;
-                }
-
-                // select child voxel that the ray enters first
-                idx = 0;
-                scale--;
-                span = half_span;
-                if (t_center.x > t_min) idx ^= 1, pos.x += span;
-                if (t_center.y > t_min) idx ^= 2, pos.y += span;
-                if (t_center.z > t_min) idx ^= 4, pos.z += span;
-
-                //t_max = tv_max;
-                cur = 0;
-
-                continue;
+            // check if node is a leaf
+            if ((parent & 0xFF000000) == 0 && (parent & 0xFFFFFF) != 0) {
+                mat_data = 2;
+                break;
             }
+
+            // select child voxel that the ray enters first
+            idx = 0;
+            scale--;
+            span = half_span;
+            if (t_center.x > t_min) idx ^= 1, pos.x += span;
+            if (t_center.y > t_min) idx ^= 2, pos.y += span;
+            if (t_center.z > t_min) idx ^= 4, pos.z += span;
+            cur = 0;
+
+            continue;
         }
 
         // ADVANCE
@@ -152,11 +140,6 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
         if (t_corner.x <= tc_max) step_mask ^= 1, pos.x -= span;
         if (t_corner.y <= tc_max) step_mask ^= 2, pos.y -= span;
         if (t_corner.z <= tc_max) step_mask ^= 4, pos.z -= span;
-        /*
-        if (t_corner.x <= tc_max) step_mask ^= 1, pos.x += span;
-        if (t_corner.y <= tc_max) step_mask ^= 2, pos.y += span;
-        if (t_corner.z <= tc_max) step_mask ^= 4, pos.z += span;
-        */
 
         // update active t-span and flip bits of the child slot index
         t_min = tc_max;
@@ -172,6 +155,7 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
             if ((step_mask & 2) != 0) differing |= floatBitsToUint(pos.y) ^ floatBitsToUint(pos.y + span);
             if ((step_mask & 4) != 0) differing |= floatBitsToUint(pos.z) ^ floatBitsToUint(pos.z + span);
             scale = findMSB(differing);
+            if (scale >= STACK_SIZE) break;
             span = uintBitsToFloat((scale - STACK_SIZE + 127u) << 23u); // exp2f(scale - s_max)
 
             // restore parent voxel from the stack
@@ -227,6 +211,6 @@ void main() {
     vec3 pos_before_start;
 
     bool result = raymarch(ray.o, ray.d, pos, norm, mat_data, iter, pos_before_start);
-    out_col = vec4(float(mat_data == 1), float(mat_data == 2), float(mat_data == 3), 1.0);
+    out_col = vec4(float(mat_data == 2));
     // out_col = vec4(step(vec3(1.0), pos_before_start) * float(result), 1.0);
 }
