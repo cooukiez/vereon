@@ -155,7 +155,10 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
             if ((step_mask & 2) != 0) differing |= floatBitsToUint(pos.y) ^ floatBitsToUint(pos.y + span);
             if ((step_mask & 4) != 0) differing |= floatBitsToUint(pos.z) ^ floatBitsToUint(pos.z + span);
             scale = findMSB(differing);
-            if (scale >= STACK_SIZE) break;
+            if (scale >= STACK_SIZE) {
+                mat_data = 1;
+                break;
+            };
             span = uintBitsToFloat((scale - STACK_SIZE + 127u) << 23u); // exp2f(scale - s_max)
 
             // restore parent voxel from the stack
@@ -211,6 +214,6 @@ void main() {
     vec3 pos_before_start;
 
     bool result = raymarch(ray.o, ray.d, pos, norm, mat_data, iter, pos_before_start);
-    out_col = vec4(float(mat_data == 2));
+    out_col = vec4(float(mat_data == 2), float(mat_data == 1), 0.0, 1.0);
     // out_col = vec4(step(vec3(1.0), pos_before_start) * float(result), 1.0);
 }
