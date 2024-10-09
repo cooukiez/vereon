@@ -34,7 +34,7 @@ struct Ray {
 #define MAX_ITER 64
 uint stack[STACK_SIZE];
 
-bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data, out uint iter) {
+bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data, out uint iter, out vec3 pos_before_start) {
     iter = 0;
     mat_data = 0;
     vec3 d_abs = abs(d);
@@ -49,6 +49,7 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
     vec3 t_coef = -1.0 / d_abs;
     vec3 t_bias = t_coef * o;
 
+    //uint oct_mask = 7;
     uint oct_mask = 0;
     vec3 inverse_origin = 3.0 * t_coef - t_bias;
     if (d.x > 0.0f) oct_mask ^= 1u, t_bias.x = inverse_origin.x;
@@ -64,7 +65,8 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
 
     float h = t_max;
     t_min = max(t_min, 0.0f);
-    t_max = max(t_max, 1.0f);
+    //t_max = min(t_max, 1.0f);
+    //t_max = max(t_max, 1.0f);
 
     uint parent = svo.nodes[0];
     uint cur = 0;
@@ -75,6 +77,8 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
     if (t_half.x > t_min) idx ^= 1u, pos.x = 1.5f;
     if (t_half.y > t_min) idx ^= 2u, pos.y = 1.5f;
     if (t_half.z > t_min) idx ^= 4u, pos.z = 1.5f;
+
+    pos_before_start = pos;
 
     uint scale = STACK_SIZE - 1;
     float span = 0.5; // exp2( scale - STACK_SIZE )
@@ -94,8 +98,9 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
         float tc_max = min(min(t_corner.x, t_corner.y), t_corner.z);
 
         // process child if bit in child mask is set
-        uint child_bit_idx = CHILD_OFFSET + (idx ^ oct_mask);
-        if ((cur & (1 << child_bit_idx)) != 0 && t_min <= t_max) {
+        uint child_shift = idx ^ oct_mask;
+        uint child_mask = cur >> child_shift;
+        if ((cur & 0x1000000) != 0 && t_min <= t_max) {
             // Todo: terminate if the voxel is small enough
 
             // INTERSECT
@@ -105,7 +110,8 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
             float half_span = span * 0.5;
             vec3 t_center = half_span * t_coef + t_corner;
 
-            if (t_min <= tv_max) {
+            if (true) {
+            //if (t_min <= tv_max) {
                 // PUSH
                 // write current parent to the stack
                 if (tc_max < h) stack[scale] = parent;
@@ -133,7 +139,7 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
                 if (t_center.y > t_min) idx ^= 2, pos.y += span;
                 if (t_center.z > t_min) idx ^= 4, pos.z += span;
 
-                t_max = tv_max;
+                //t_max = tv_max;
                 cur = 0;
 
                 continue;
@@ -143,13 +149,18 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
         // ADVANCE
         // step along the ray to the next voxel
         uint step_mask = 0;
+        if (t_corner.x <= tc_max) step_mask ^= 1, pos.x -= span;
+        if (t_corner.y <= tc_max) step_mask ^= 2, pos.y -= span;
+        if (t_corner.z <= tc_max) step_mask ^= 4, pos.z -= span;
+        /*
         if (t_corner.x <= tc_max) step_mask ^= 1, pos.x += span;
         if (t_corner.y <= tc_max) step_mask ^= 2, pos.y += span;
         if (t_corner.z <= tc_max) step_mask ^= 4, pos.z += span;
+        */
 
         // update active t-span and flip bits of the child slot index
         t_min = tc_max;
-        idx = idx ^ step_mask;
+        idx ^= step_mask;
 
         // proceed with pop if the bit flips disagree
         // with the ray direction
@@ -157,9 +168,9 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
             // POP
             // find the highest differing bit between the two positions
             uint differing = 0; // differing bits
-            if ((step_mask & 1u) != 0) differing |= floatBitsToUint(pos.x) ^ floatBitsToUint(pos.x + span);
-            if ((step_mask & 2u) != 0) differing |= floatBitsToUint(pos.y) ^ floatBitsToUint(pos.y + span);
-            if ((step_mask & 4u) != 0) differing |= floatBitsToUint(pos.z) ^ floatBitsToUint(pos.z + span);
+            if ((step_mask & 1) != 0) differing |= floatBitsToUint(pos.x) ^ floatBitsToUint(pos.x + span);
+            if ((step_mask & 2) != 0) differing |= floatBitsToUint(pos.y) ^ floatBitsToUint(pos.y + span);
+            if ((step_mask & 4) != 0) differing |= floatBitsToUint(pos.z) ^ floatBitsToUint(pos.z + span);
             scale = findMSB(differing);
             span = uintBitsToFloat((scale - STACK_SIZE + 127u) << 23u); // exp2f(scale - s_max)
 
@@ -213,7 +224,9 @@ void main() {
 
     vec3 pos, norm;
     uint mat_data, iter;
+    vec3 pos_before_start;
 
-    bool result = raymarch(ray.o, ray.d, pos, norm, mat_data, iter);
+    bool result = raymarch(ray.o, ray.d, pos, norm, mat_data, iter, pos_before_start);
     out_col = vec4(float(mat_data == 1), float(mat_data == 2), float(mat_data == 3), 1.0);
+    // out_col = vec4(step(vec3(1.0), pos_before_start) * float(result), 1.0);
 }

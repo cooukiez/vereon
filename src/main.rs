@@ -452,7 +452,7 @@ fn main() {
             .unwrap()
     };
 
-    let mut svo = SVO::new(2);
+    let mut svo = SVO::new(4);
     svo.insert_node(Vec3::from_array([0.0; 3]));
     // svo.gen_random_svo(11482889049544778869);
 
