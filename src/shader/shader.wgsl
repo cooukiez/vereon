@@ -145,7 +145,7 @@ fn raymarch_leaf(
     var scale_exp2: f32 = 0.5; // exp2( scale - STACK_SIZE )
 
     // traverse voxels along the ray
-    // as long as the current voxel stays within the octree
+    // as long as the current voxel stays witposhin the octree
     while (scale < STACK_SIZE && scale > 0) {
         iter++;
 
@@ -158,7 +158,7 @@ fn raymarch_leaf(
         // leaf node
         if ((cur & 0xFF000000u) == 0) {
             //*p_mat = cur & 0xFFFFFFu;
-            *p_mat = 1u;
+            *p_mat = 3u;
             break;
         }
 
@@ -250,7 +250,7 @@ fn raymarch_leaf(
             }
 
             // position of the highest differing bit
-            scale = firstLeadingBit(differing_bits);
+            scale = (differing_bits);
 
             scale_exp2 = bitcast<f32>((scale - STACK_SIZE + 127u) << 23u); // exp2f(scale - s_max)
 

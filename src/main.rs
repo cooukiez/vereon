@@ -42,7 +42,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
     size.height = size.height.max(1);
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::PRIMARY,
+        backends: wgpu::Backends::VULKAN,
         flags: wgpu::InstanceFlags::debugging(),
         ..Default::default()
     });
@@ -62,7 +62,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
         .request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
-                required_features: wgpu::Features::empty(),
+                required_features: wgpu::Features::SPIRV_SHADER_PASSTHROUGH,
                 required_limits: wgpu::Limits {
                     max_storage_buffers_per_shader_stage: 1,
                     max_storage_buffer_binding_size: !(!0 << CHILD_OFFSET),
@@ -163,10 +163,15 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
     //
     // create pipeline
     //
+    /*
     let shader = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader/shader.wgsl"))),
     });
+    */
+    
+    let vert_shader = unsafe { dev.create_shader_module_spirv(&wgpu::include_spirv_raw!("shader/glsl/vert.spv")) };
+    let frag_shader = unsafe { dev.create_shader_module_spirv(&wgpu::include_spirv_raw!("shader/glsl/frag.spv")) };
 
     let pipeline_layout = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("render_pipeline_layout"),
@@ -181,13 +186,13 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
         label: None,
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: "vs_main",
+            module: &vert_shader,
+            entry_point: "main",
             buffers: &[Vertex::desc()],
         },
         fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: "fs_main",
+            module: &frag_shader,
+            entry_point: "main",
             targets: &[Some(swapchain_format.into())],
         }),
         primitive: wgpu::PrimitiveState::default(),
@@ -248,7 +253,8 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
 
     event_loop
         .run(|event, elwt| {
-            let _ = (&instance, &adapter, &shader, &pipeline_layout);
+            // let _ = (&instance, &adapter, &shader, &pipeline_layout);
+            let _ = (&instance, &adapter, &frag_shader, &vert_shader, &pipeline_layout);
             elwt.set_control_flow(ControlFlow::Poll);
 
             match event {
