@@ -452,16 +452,18 @@ fn main() {
             .unwrap()
     };
 
-    let mut svo = SVO::new(4);
+    let mut svo = SVO::new(10);
+    /*
     let mut rng = rand::thread_rng();
     svo.insert_node(Vec3::from_array([0.0; 3]));
     svo.insert_node(Vec3::from_array([2.0; 3]));
     svo.insert_node(Vec3::from_array([8.0; 3]));
+    */
 
-    //svo.gen_random_svo(11482889049544778869);
+    svo.gen_random_svo(11482889049544778869);
 
     info!("filled node count: {}", svo.count_notes());
-    svo.log_octree();
+    // svo.log_octree();
 
     block_on(run(event_loop, window, svo));
 }

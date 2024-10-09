@@ -30,7 +30,8 @@ struct Ray {
 
 #define STACK_SIZE 23
 #define EPS 1e-6
-#define MAX_ITER 256
+#define MAX_ITER 64
+#define CHILD_OFFSET 24
 uint stack[STACK_SIZE];
 
 bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data, out uint iter, out vec3 pos_before_start) {
@@ -94,9 +95,8 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
         float tc_max = min(min(t_corner.x, t_corner.y), t_corner.z);
 
         // process child if bit in child mask is set
-        uint child_shift = idx ^ oct_mask;
-        uint child_mask = cur >> child_shift;
-        if ((cur & 0x1000000) != 0 && t_min <= t_max) {
+        uint child_bit = 1 << (CHILD_OFFSET + (idx ^ oct_mask));
+        if ((cur & child_bit) != 0 && t_min <= t_max) {
             // Todo: terminate if the voxel is small enough
 
             // INTERSECT
@@ -116,7 +116,7 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
 
             // check if node is a leaf
             if ((parent & 0xFF000000) == 0 && (parent & 0xFFFFFF) != 0) {
-                mat_data = 2;
+                mat_data = parent & 0xFFFFFF;
                 break;
             }
 
@@ -153,10 +153,7 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
             if ((step_mask & 2) != 0) differing |= floatBitsToUint(pos.y) ^ floatBitsToUint(pos.y + span);
             if ((step_mask & 4) != 0) differing |= floatBitsToUint(pos.z) ^ floatBitsToUint(pos.z + span);
             scale = findMSB(differing);
-            if (scale >= STACK_SIZE) {
-                mat_data = 1;
-                break;
-            };
+            if (scale >= STACK_SIZE) break;
             span = uintBitsToFloat((scale - STACK_SIZE + 127u) << 23u); // exp2f(scale - s_max)
 
             // restore parent voxel from the stack
@@ -212,6 +209,6 @@ void main() {
     vec3 pos_before_start;
 
     bool result = raymarch(ray.o, ray.d, pos, norm, mat_data, iter, pos_before_start);
-    out_col = vec4(float(mat_data == 2), float(mat_data == 1), 0.0, 1.0);
+    out_col = vec4(float(mat_data));
     // out_col = vec4(step(vec3(1.0), pos_before_start) * float(result), 1.0);
 }
