@@ -4,7 +4,6 @@ mod types;
 
 use imgui_wgpu::{Renderer, RendererConfig};
 use pollster::block_on;
-use std::borrow::Cow;
 use std::io::Write;
 use std::{env, io};
 
@@ -453,11 +452,10 @@ fn main() {
             .unwrap()
     };
 
-    let mut svo = SVO::new(SVO_DEPTH);
+    let mut svo = SVO::new(4);
     let mut rng = rand::thread_rng();
     svo.insert_node(Vec3::from_array([0.0; 3]));
     svo.insert_node(Vec3::from_array([2.0; 3]));
-    svo.insert_node(Vec3::from_array([4.0; 3]));
     svo.insert_node(Vec3::from_array([8.0; 3]));
 
     //svo.gen_random_svo(11482889049544778869);

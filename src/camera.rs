@@ -85,7 +85,7 @@ impl Default for Camera {
     fn default() -> Self {
         let mut cam = Camera {
             // settings
-            mov_speed_slow: 0.05,
+            mov_speed_slow: 0.0005,
             mov_speed_fast: 0.1,
 
             fov: 60.0,

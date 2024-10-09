@@ -30,7 +30,7 @@ struct Ray {
 
 #define STACK_SIZE 23
 #define EPS 1e-6
-#define MAX_ITER 64
+#define MAX_ITER 256
 uint stack[STACK_SIZE];
 
 bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data, out uint iter, out vec3 pos_before_start) {
@@ -39,11 +39,9 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
     vec3 d_abs = abs(d);
 
     // get rid of small direction components, to avoid division by zero
-    /*
     d.x = d_abs.x > EPS ? d.x : (d.x >= 0 ? EPS : -EPS);
     d.y = d_abs.y > EPS ? d.y : (d.y >= 0 ? EPS : -EPS);
     d.z = d_abs.z > EPS ? d.z : (d.z >= 0 ? EPS : -EPS);
-    */
 
     // precompute coefficients of tx(x), ty(y), tz(z)
     // octree is assumed to reside at coordinates [1, 2]
