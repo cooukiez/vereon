@@ -43,7 +43,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::VULKAN,
-        flags: wgpu::InstanceFlags::debugging(),
+        flags: wgpu::InstanceFlags::empty(),
         ..Default::default()
     });
 
@@ -452,8 +452,8 @@ fn main() {
             .unwrap()
     };
 
-    let mut svo = SVO::new(3);
-    svo.insert_node(Vec3::from_array([2.0; 3]));
+    let mut svo = SVO::new(2);
+    svo.insert_node(Vec3::from_array([0.0; 3]));
     // svo.gen_random_svo(11482889049544778869);
 
     info!("filled node count: {}", svo.count_notes());
