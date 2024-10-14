@@ -12,15 +12,17 @@ pub struct Camera {
     pub z_near: f32,
     pub z_far: f32,
 
-    pub rotation_min: Vec2, // x: yaw, y: pitch
-    pub rotation_max: Vec2, // x: yaw, y: pitch
+    pub yaw_space: Vec2, // x: min, y: max
+    pub pitch_space: Vec2, // x: min, y: max
 
     pub up_axis: Vec3,
 
     pub enable_matrices: bool,
 
     // internal
-    pub rotation: Vec2, // x: yaw, y: pitch
+    pub yaw: f32,
+    pub pitch: f32,
+    pub body_yaw: f32,
 
     pub front: Vec3,
     pub right: Vec3,
@@ -51,15 +53,19 @@ impl Camera {
     }
 
     pub fn rotate(&mut self, mouse_delta: Vec2) {
-        self.rotation -= mouse_delta * self.sensitivity * self.mouse_sign;
-        self.rotation = self.rotation.clamp(self.rotation_min, self.rotation_max);
+        let delta_rot = mouse_delta * self.sensitivity * self.mouse_sign;
+        self.yaw -= delta_rot.x;
+        self.pitch -= delta_rot.y;
+        
+        self.yaw = self.yaw.clamp(self.yaw_space.x + self.body_yaw, self.yaw_space.y + self.body_yaw);
+        self.pitch = self.pitch.clamp(self.pitch_space.x, self.pitch_space.y);
 
         self.front = Vec3::new(
-            self.rotation.x.to_radians().cos() * self.rotation.y.to_radians().cos(),
-            self.rotation.y.to_radians().sin(),
-            self.rotation.x.to_radians().sin() * self.rotation.y.to_radians().cos(),
+            self.yaw.to_radians().cos() * self.pitch.to_radians().cos(),
+            self.pitch.to_radians().sin(),
+            self.yaw.to_radians().sin() * self.pitch.to_radians().cos(),
         )
-        .normalize();
+            .normalize();
 
         self.right = self.front.cross(self.up_axis).normalize();
         self.up = self.right.cross(self.front).normalize();
@@ -69,6 +75,11 @@ impl Camera {
 
         self.plane_u = self.right * self.aspect_ratio * self.fov_tan;
         self.plane_v = self.up * self.aspect_ratio * self.fov_tan;
+    }
+
+    pub fn move_cam(&mut self, mov_vec: Vec3) {
+        self.body_yaw = self.yaw;
+        self.pos += mov_vec;
     }
 
     pub fn get_view_proj(&self) -> Mat4 {
@@ -95,15 +106,17 @@ impl Default for Camera {
             z_near: 0.1,
             z_far: 100.0,
 
-            rotation_min: Vec2::new(-180.0, -89.0),
-            rotation_max: Vec2::new(180.0, 89.0),
+            yaw_space: Vec2::new(-120.0, 120.0),
+            pitch_space: Vec2::new(-89.0, 89.0),
 
             up_axis: Vec3::new(0.0, 1.0, 0.0),
 
             enable_matrices: false,
 
             // internal
-            rotation: Vec2::new(-90.0, 0.0),
+            yaw: 0.0,
+            pitch: 0.0,
+            body_yaw: 0.0,
 
             front: Vec3::ZERO,
             right: Vec3::ZERO,
@@ -125,7 +138,9 @@ impl Default for Camera {
         };
 
         cam.fov_tan = (cam.fov / 2.0).to_radians().tan();
+        cam.body_yaw = cam.yaw;
         cam.mov_speed = cam.mov_speed_slow;
+
         cam
     }
 }

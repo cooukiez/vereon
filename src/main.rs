@@ -1,5 +1,4 @@
 mod camera;
-mod octree;
 mod types;
 
 use imgui_wgpu::{Renderer, RendererConfig};
@@ -8,18 +7,18 @@ use std::io::Write;
 use std::{env, io};
 
 use crate::camera::Camera;
-use crate::octree::SVO;
 use crate::types::{Uniform, Vertex, INDICES, VERTICES};
 use ansi_term::Color::{Blue, Red, Yellow};
 use ansi_term::Style;
 use env_logger::{Builder, Target};
-use glam::{UVec2, Vec3};
+use glam::UVec2;
 use glam::Vec2;
 use imgui::{Condition, Context, FontSource};
 use imgui_winit_support::WinitPlatform;
 use log::{info, LevelFilter};
 use std::time::Instant;
-use rand::Rng;
+use vss_rs::bsvo::{read_bsvo, write_bsvo, BsvoHeader};
+use vss_rs::svo::SVO;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalPosition;
 use winit::{
@@ -34,7 +33,7 @@ use winit::event::ElementState;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 const CHILD_OFFSET: u32 = 24;
-const SVO_DEPTH: u8 = 8;
+const SVO_DEPTH: u8 = 10;
 
 async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
     let mut size = window.inner_size();
@@ -276,16 +275,16 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                                 }
                                 
                                 Key::Character("w") => {
-                                    cam.pos += cam.mov_lin;
+                                    cam.move_cam(cam.mov_lin);
                                 }
                                 Key::Character("s") => {
-                                    cam.pos -= cam.mov_lin;
+                                    cam.move_cam(-cam.mov_lin);
                                 }
                                 Key::Character("a") => {
-                                    cam.pos -= cam.mov_lat;
+                                    cam.move_cam(-cam.mov_lat);
                                 }
                                 Key::Character("d") => {
-                                    cam.pos += cam.mov_lat;
+                                    cam.move_cam(cam.mov_lat);
                                 }
                                 _ => {},
                             }
@@ -452,17 +451,14 @@ fn main() {
             .unwrap()
     };
 
-    let mut svo = SVO::new(10);
-    /*
-    let mut rng = rand::thread_rng();
-    svo.insert_node(Vec3::from_array([0.0; 3]));
-    svo.insert_node(Vec3::from_array([2.0; 3]));
-    svo.insert_node(Vec3::from_array([8.0; 3]));
-    */
-
+    let mut svo = SVO::new(SVO_DEPTH);
     svo.gen_random_svo(11482889049544778869);
+    // let bsvo_header = BsvoHeader::new(svo.depth, svo.root_span, false);
+    // write_bsvo("seed_11482889049544778869.bsvo", &svo, bsvo_header).unwrap();
 
-    info!("filled node count: {}", svo.count_notes());
+    // let (_, svo) = read_bsvo("cube.bsvo").unwrap();
+
+    info!("filled node count: {}", svo.nodes.len());
     // svo.log_octree();
 
     block_on(run(event_loop, window, svo));

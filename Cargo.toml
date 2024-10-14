@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+vss-rs = "0.1"
+
 wgpu = { version = "0.19", features = ["spirv"] }
 
 winit = "0.29"
