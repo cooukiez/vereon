@@ -17,8 +17,6 @@ pub struct Camera {
 
     pub up_axis: Vec3,
 
-    pub enable_matrices: bool,
-
     // internal
     pub yaw: f32,
     pub pitch: f32,
@@ -46,15 +44,12 @@ pub struct Camera {
 impl Camera {
     pub fn update_proj(&mut self, window_width: u32, window_height: u32) {
         self.aspect_ratio = (window_width as f32) / (window_height as f32);
-        if self.enable_matrices {
-            self.proj =
-                Mat4::perspective_lh(self.fov_tan, self.aspect_ratio, self.z_near, self.z_far);
-        }
+        self.proj = Mat4::perspective_rh(self.fov_tan, self.aspect_ratio, self.z_near, self.z_far);
     }
 
     pub fn rotate(&mut self, mouse_delta: Vec2) {
-        let delta_rot = mouse_delta * self.sensitivity * self.mouse_sign;
-        self.yaw -= delta_rot.x;
+        let delta_rot = mouse_delta * self.sensitivity;
+        self.yaw += delta_rot.x;
         self.pitch -= delta_rot.y;
         
         self.yaw = self.yaw.clamp(self.yaw_space.x + self.body_yaw, self.yaw_space.y + self.body_yaw);
@@ -83,12 +78,8 @@ impl Camera {
     }
 
     pub fn get_view_proj(&self) -> Mat4 {
-        if self.enable_matrices {
-            let view = Mat4::look_at_lh(self.pos, self.pos + self.front, self.up);
-            self.proj * view
-        } else {
-            Mat4::IDENTITY
-        }
+        let view = Mat4::look_at_rh(self.pos, self.pos + self.front, self.up);
+        self.proj * view
     }
 }
 
@@ -99,7 +90,7 @@ impl Default for Camera {
             mov_speed_slow: 0.05,
             mov_speed_fast: 0.1,
 
-            fov: 60.0,
+            fov: 120.0,
             sensitivity: 0.1,
             mouse_sign: Vec2::new(-1.0, 1.0),
 
@@ -110,8 +101,6 @@ impl Default for Camera {
             pitch_space: Vec2::new(-89.0, 89.0),
 
             up_axis: Vec3::new(0.0, 1.0, 0.0),
-
-            enable_matrices: false,
 
             // internal
             yaw: 0.0,

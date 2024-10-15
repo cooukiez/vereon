@@ -8,12 +8,13 @@ use std::io::Write;
 use std::{env, io};
 
 use crate::camera::Camera;
+use crate::octree::SVOExt;
 use crate::types::{Uniform, Vertex, BASE_CUBE_IDX, BASE_CUBE_UV, BASE_CUBE_VERT, INDICES, VERTICES};
 use ansi_term::Color::{Blue, Red, Yellow};
 use ansi_term::Style;
 use env_logger::{Builder, Target};
-use glam::{UVec2, Vec3};
 use glam::Vec2;
+use glam::{UVec2, Vec3};
 use imgui::{Condition, Context, FontSource};
 use imgui_winit_support::WinitPlatform;
 use log::{info, LevelFilter};
@@ -23,6 +24,9 @@ use vss_rs::svo::{Octant, SVO};
 use vss_rs::vox::index_to_pos;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalPosition;
+use winit::event::ElementState;
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+use winit::window::CursorGrabMode;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -31,10 +35,6 @@ use winit::{
     window::Window,
     window::WindowBuilder,
 };
-use winit::event::ElementState;
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
-use winit::window::CursorGrabMode;
-use crate::octree::SVOExt;
 
 const CHILD_OFFSET: u32 = 24;
 const SVO_DEPTH: u8 = 10;
@@ -312,6 +312,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                         uniform.cam_plane_u = cam.plane_u.extend(0.0).to_array();
                         uniform.cam_plane_v = cam.plane_v.extend(0.0).to_array();
                         uniform.mouse = mouse.to_array();
+                        uniform.proj_mat = cam.get_view_proj().to_cols_array_2d();
                         queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
 
                         window
