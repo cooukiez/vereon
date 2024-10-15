@@ -41,7 +41,7 @@ impl SVOExt for SVO {
                     self.polygonize_branch(max_depth, cd, cs, node.first_child_index() + ci, pos, vertices, indices);
                 }
             }
-        } else if node > 0 {
+        } else if !node.empty() {
             let center_pos = pos + Vec3::splat(cs * 0.25);
             let vertex_offset = vertices.len() as u32;
 
@@ -50,7 +50,9 @@ impl SVOExt for SVO {
                     position: (center_pos + Vec3::from(BASE_CUBE_VERT[i]) * cs).to_array(),
                     uv: [BASE_CUBE_UV[i].0, BASE_CUBE_UV[i].1],
                 });
-
+            }
+            
+            for i in 0..BASE_CUBE_IDX.len() {
                 indices.push(BASE_CUBE_IDX[i] + vertex_offset);
             }
         }

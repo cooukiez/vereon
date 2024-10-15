@@ -200,7 +200,10 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
             entry_point: "main",
             targets: &[Some(swapchain_format.into())],
         }),
-        primitive: wgpu::PrimitiveState::default(),
+        primitive: wgpu::PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
         multiview: None,
@@ -296,6 +299,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                             }
 
                             uniform.cam_pos = cam.pos.extend(0.0).to_array();
+                            uniform.proj_mat = cam.get_view_proj().to_cols_array_2d();
                             queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
                         }
                     }
