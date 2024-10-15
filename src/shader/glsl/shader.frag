@@ -34,7 +34,14 @@ struct Ray {
 #define CHILD_OFFSET 24
 uint stack[STACK_SIZE];
 
-bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data, out uint iter, out vec3 pos_before_start) {
+bool raymarch(vec3 o,
+              vec3 d,
+out vec3 o_pos,
+out vec3 o_norm,
+out uint mat_data,
+out uint iter,
+out vec3 pos_before_start
+) {
     iter = 0;
     mat_data = 0;
     vec3 d_abs = abs(d);
@@ -81,13 +88,13 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
     float span = 0.5; // exp2( scale - STACK_SIZE )
 
     // traverse voxels along the ray
-    // as long as the current voxel stays witposhin the octree
+    // as long as the current voxel stays within the octree
     while (iter < MAX_ITER) {
         iter++;
 
         // fetch child descriptor unless it is already valid
         if (cur == 0)
-            cur = parent;
+        cur = parent;
 
         // determine maximum t-value of the cube by
         // evaluating tx(), ty(), tz() at its corner
@@ -177,8 +184,8 @@ bool raymarch(vec3 o, vec3 d, out vec3 o_pos, out vec3 o_norm, out uint mat_data
 
     vec3 t_corner = t_coef * (pos + span) - t_bias;
     vec3 norm = (t_corner.x > t_corner.y && t_corner.x > t_corner.z)
-        ? vec3(-1, 0, 0)
-        : (t_corner.y > t_corner.z ? vec3(0, -1, 0) : vec3(0, 0, -1));
+    ? vec3(-1, 0, 0)
+    : (t_corner.y > t_corner.z ? vec3(0, -1, 0) : vec3(0, 0, -1));
     if ((oct_mask & 1u) == 0u) norm.x = -norm.x;
     if ((oct_mask & 2u) == 0u) norm.y = -norm.y;
     if ((oct_mask & 4u) == 0u) norm.z = -norm.z;

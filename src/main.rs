@@ -1,5 +1,6 @@
 mod camera;
 mod types;
+mod octree;
 
 use imgui_wgpu::{Renderer, RendererConfig};
 use pollster::block_on;
@@ -7,18 +8,19 @@ use std::io::Write;
 use std::{env, io};
 
 use crate::camera::Camera;
-use crate::types::{Uniform, Vertex, INDICES, VERTICES};
+use crate::types::{Uniform, Vertex, BASE_CUBE_IDX, BASE_CUBE_UV, BASE_CUBE_VERT, INDICES, VERTICES};
 use ansi_term::Color::{Blue, Red, Yellow};
 use ansi_term::Style;
 use env_logger::{Builder, Target};
-use glam::UVec2;
+use glam::{UVec2, Vec3};
 use glam::Vec2;
 use imgui::{Condition, Context, FontSource};
 use imgui_winit_support::WinitPlatform;
 use log::{info, LevelFilter};
 use std::time::Instant;
 use vss_rs::bsvo::{read_bsvo, write_bsvo, BsvoHeader};
-use vss_rs::svo::SVO;
+use vss_rs::svo::{Octant, SVO};
+use vss_rs::vox::index_to_pos;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalPosition;
 use winit::{
@@ -31,6 +33,8 @@ use winit::{
 };
 use winit::event::ElementState;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+use winit::window::CursorGrabMode;
+use crate::octree::SVOExt;
 
 const CHILD_OFFSET: u32 = 24;
 const SVO_DEPTH: u8 = 10;
@@ -55,7 +59,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
         compatible_surface: Some(&surf),
         force_fallback_adapter: false,
     }))
-    .unwrap();
+        .unwrap();
 
     let (dev, queue) = adapter
         .request_device(
@@ -68,7 +72,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
 
                     ..wgpu::Limits::downlevel_webgl2_defaults()
                 }
-                .using_resolution(adapter.limits()),
+                    .using_resolution(adapter.limits()),
             },
             None,
         )
@@ -95,18 +99,20 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     });
 
+    let (vertices, indices) = svo.polygonize(3);
+
     // TODO: add vertex staging buffer
     let vertex_buffer = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("vertex_buffer"),
-        contents: bytemuck::cast_slice(VERTICES),
+        contents: bytemuck::cast_slice(vertices.as_slice()),
         usage: wgpu::BufferUsages::VERTEX,
     });
 
     // TODO: add index staging buffer
-    let num_indices = INDICES.len() as u32;
+    let num_indices = indices.len() as u32;
     let index_buffer = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("index_buffer"),
-        contents: bytemuck::cast_slice(INDICES),
+        contents: bytemuck::cast_slice(indices.as_slice()),
         usage: wgpu::BufferUsages::INDEX,
     });
 
@@ -168,7 +174,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
         source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader/shader.wgsl"))),
     });
     */
-    
+
     let vert_shader = unsafe { dev.create_shader_module_spirv(&wgpu::include_spirv_raw!("shader/glsl/vert.spv")) };
     let frag_shader = unsafe { dev.create_shader_module_spirv(&wgpu::include_spirv_raw!("shader/glsl/frag.spv")) };
 
@@ -273,7 +279,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                                 Key::Named(NamedKey::Escape) => {
                                     elwt.exit();
                                 }
-                                
+
                                 Key::Character("w") => {
                                     cam.move_cam(cam.mov_lin);
                                 }
@@ -286,9 +292,9 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                                 Key::Character("d") => {
                                     cam.move_cam(cam.mov_lat);
                                 }
-                                _ => {},
+                                _ => {}
                             }
-                            
+
                             uniform.cam_pos = cam.pos.extend(0.0).to_array();
                             queue.write_buffer(&uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
                         }
@@ -298,8 +304,8 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                         let mouse = Vec2::new(pos.x, pos.y);
                         let mouse_delta = mouse
                             - Vec2::new(size.width as f32, size.height as f32)
-                                / (2.0 * hidpi_factor as f32);
-                        
+                            / (2.0 * hidpi_factor as f32);
+
                         cam.rotate(mouse_delta);
 
                         uniform.cam_dir = cam.front.extend(0.0).to_array();
@@ -342,13 +348,13 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                                 .build(|| {
                                     ui.text(format!("frame_time: {delta_time:?}"));
                                     ui.text(format!("fps: {fps}"));
-                                    
+
                                     let mouse_pos = ui.io().mouse_pos;
                                     ui.text(format!(
                                         "mouse_pos: ({:.1},{:.1})",
                                         mouse_pos[0], mouse_pos[1]
                                     ));
-                                    
+
                                     ui.text(format!("pos: {:?}", cam.pos));
                                 });
                         }
@@ -388,7 +394,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, svo: SVO) {
                             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                             render_pass.set_index_buffer(
                                 index_buffer.slice(..),
-                                wgpu::IndexFormat::Uint16,
+                                wgpu::IndexFormat::Uint32,
                             );
                             render_pass.draw_indexed(0..num_indices, 0, 0..1);
 
@@ -432,7 +438,7 @@ fn main() {
                 style.paint(record.level().to_string()),
                 record.args()
             ))
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "error writing log."))
+                .map_err(|_| io::Error::new(io::ErrorKind::Other, "error writing log."))
         })
         .filter(None, LevelFilter::Trace) // Adjust the filter to show all levels
         .init();
@@ -451,12 +457,16 @@ fn main() {
             .unwrap()
     };
 
-    let mut svo = SVO::new(SVO_DEPTH);
-    svo.gen_random_svo(11482889049544778869);
+    // window.set_cursor_grab(CursorGrabMode::Locked).unwrap();
+    
+    // let mut svo = SVO::new(SVO_DEPTH);
+    // svo.gen_random_svo(11482889049544778869);
     // let bsvo_header = BsvoHeader::new(svo.depth, svo.root_span, false);
     // write_bsvo("seed_11482889049544778869.bsvo", &svo, bsvo_header).unwrap();
 
-    // let (_, svo) = read_bsvo("cube.bsvo").unwrap();
+    let (_, svo) = read_bsvo("cube.bsvo").unwrap();
+
+    // log_octree(&svo);
 
     info!("filled node count: {}", svo.nodes.len());
     // svo.log_octree();
